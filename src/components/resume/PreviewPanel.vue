@@ -25,6 +25,8 @@ const templatePickerOpen = ref(false)
 const A4_WIDTH = 794
 const A4_RATIO = 297 / 210
 const A4_HEIGHT = Math.round(A4_WIDTH * A4_RATIO)
+// 预览分页线按用户实测的导出分页位置向上校准。
+const PDF_PAGE_BREAK_PREVIEW_OFFSET = 16
 const pageBreaks = ref<number[]>([])
 const previewScale = ref(1)
 const paperVisualHeight = ref(A4_HEIGHT)
@@ -53,6 +55,78 @@ async function setExportProgress(percent: number, text: string) {
   exportProgressText.value = text
   await nextTick()
   await waitNextFrame()
+}
+
+function prepareResumeTemplatePdfAlignment(exportNode: HTMLElement) {
+  const defaultTemplate = exportNode.querySelector<HTMLElement>('.resume-template-default')
+
+  // html2canvas 对原生 marker 和行高基线的处理不稳定，导出副本用真实绝对定位标记保证视觉对齐。
+  const sectionTitles = defaultTemplate?.querySelectorAll<HTMLElement>('.section-title') ?? []
+  sectionTitles.forEach((title) => {
+    if (title.querySelector(':scope > .pdf-export-title-text')) return
+
+    const titleText = document.createElement('span')
+    titleText.className = 'pdf-export-title-text'
+    while (title.firstChild) {
+      titleText.appendChild(title.firstChild)
+    }
+    title.appendChild(titleText)
+  })
+
+  const metaIcons = exportNode.querySelectorAll<SVGSVGElement>('.meta-item > .meta-icon-svg')
+  metaIcons.forEach((icon) => {
+    if (icon.parentElement?.classList.contains('pdf-export-meta-icon-box')) return
+    const metaItem = icon.parentElement
+    if (!(metaItem instanceof HTMLElement)) return
+
+    const iconBox = document.createElement('span')
+    iconBox.className = 'pdf-export-meta-icon-box'
+    iconBox.setAttribute('aria-hidden', 'true')
+    metaItem.classList.add('pdf-export-meta-item')
+    metaItem.insertBefore(iconBox, icon)
+    iconBox.appendChild(icon)
+
+    Array.from(metaItem.childNodes).forEach((node) => {
+      if (node === iconBox) return
+      if (node instanceof HTMLElement) {
+        node.classList.add('pdf-export-meta-text')
+        return
+      }
+
+      if (node.nodeType !== Node.TEXT_NODE || !node.textContent?.trim()) return
+      const textBox = document.createElement('span')
+      textBox.className = 'pdf-export-meta-text'
+      textBox.textContent = node.textContent
+      metaItem.replaceChild(textBox, node)
+    })
+  })
+
+  const listItems = defaultTemplate?.querySelectorAll<HTMLElement>('.entry-rich ul > li, .entry-rich ol > li') ?? []
+  listItems.forEach((item) => {
+    if (item.querySelector(':scope > .pdf-export-inline-marker')) return
+
+    const parent = item.parentElement
+    if (!parent) return
+
+    const marker = document.createElement('span')
+    marker.className = 'pdf-export-inline-marker'
+    marker.setAttribute('aria-hidden', 'true')
+
+    if (parent.tagName === 'OL') {
+      marker.classList.add('pdf-export-inline-marker-number')
+      const siblings = Array.from(parent.children).filter((node): node is HTMLElement => node instanceof HTMLElement && node.tagName === 'LI')
+      const index = Math.max(0, siblings.indexOf(item))
+      const start = Number.parseInt(parent.getAttribute('start') || '1', 10)
+      const explicitValue = Number.parseInt(item.getAttribute('value') || '', 10)
+      const markerValue = Number.isFinite(explicitValue) ? explicitValue : (Number.isFinite(start) ? start : 1) + index
+      marker.textContent = `${markerValue}.`
+    } else {
+      marker.classList.add('pdf-export-inline-marker-bullet')
+    }
+
+    item.classList.add('pdf-export-list-item')
+    item.insertBefore(marker, item.firstChild)
+  })
 }
 
 function findEffectiveCanvasHeight(canvas: HTMLCanvasElement): number {
@@ -98,12 +172,12 @@ function findEffectiveCanvasHeight(canvas: HTMLCanvasElement): number {
 function updatePageBreaks() {
   if (!resumeRef.value) return
   const contentHeight = resumeRef.value.scrollHeight
-  const pageHeight = Math.round((resumeRef.value.clientWidth || A4_WIDTH) * A4_RATIO)
+  const pageHeight = A4_HEIGHT
   paperVisualHeight.value = Math.max(A4_HEIGHT, contentHeight)
   const breaks: number[] = []
   const totalPages = Math.max(1, Math.ceil((contentHeight - 1) / pageHeight))
   for (let i = 1; i < totalPages; i += 1) {
-    breaks.push(Math.round(i * pageHeight))
+    breaks.push(i * pageHeight - PDF_PAGE_BREAK_PREVIEW_OFFSET)
   }
   pageBreaks.value = breaks
 }
@@ -239,6 +313,7 @@ async function exportPDF(mode: ExportQualityMode) {
 
   exportHost.appendChild(exportNode)
   document.body.appendChild(exportHost)
+  prepareResumeTemplatePdfAlignment(exportNode)
 
   try {
     await setExportProgress(8, '准备导出资源...')
@@ -378,10 +453,10 @@ async function exportPDF(mode: ExportQualityMode) {
 <style scoped>
 .preview-panel {
   box-sizing: border-box;
-  width: 812px;
+  width: clamp(320px, 46%, 812px);
   max-width: 812px;
   min-width: 0;
-  flex: 0 0 812px;
+  flex: 0 1 clamp(320px, 46%, 812px);
   height: 100%;
   border-left: 1px solid #e4d8cb;
   background: #efe7dc;
@@ -620,27 +695,118 @@ async function exportPDF(mode: ExportQualityMode) {
   min-height: 0 !important;
 }
 
+:global(.paper.pdf-exporting .resume-template-default .section-title) {
+  display: flex;
+  align-items: center;
+  line-height: 1;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .pdf-export-title-text) {
+  display: inline-block;
+  line-height: 1;
+  transform: translateY(-10px);
+}
+
+:global(.paper.pdf-exporting .pdf-export-meta-item) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 20px;
+  line-height: 20px;
+}
+
+:global(.paper.pdf-exporting .pdf-export-meta-text) {
+  display: inline-block;
+  line-height: 20px;
+}
+
+:global(.paper.pdf-exporting .pdf-export-meta-icon-box) {
+  box-sizing: border-box;
+  position: relative;
+  top: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+  width: 14px;
+  min-width: 14px;
+  height: 20px;
+  padding: 0;
+  line-height: 20px;
+  overflow: visible;
+}
+
+:global(.paper.pdf-exporting .pdf-export-meta-icon-box .meta-icon-svg) {
+  margin-top: 0;
+  transform: none;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .entry-rich ol) {
+  list-style: none;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .entry-rich ul li.pdf-export-list-item::before) {
+  content: none;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .entry-rich .pdf-export-list-item) {
+  position: relative;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .pdf-export-inline-marker) {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  color: currentColor;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .pdf-export-inline-marker-number) {
+  top: 0;
+  left: -1.15em;
+  min-width: 1em;
+  height: 1.75em;
+  line-height: 1.75;
+  text-align: right;
+  transform: none;
+  font-size: 1em;
+  font-weight: inherit;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .pdf-export-inline-marker-bullet) {
+  top: 1.45em;
+  left: 2px;
+  width: 5px;
+  height: 5px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: currentColor;
+}
+
 .page-line {
   position: absolute;
   left: 16px;
   right: 16px;
-  transform: translateY(-6px);
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  height: 0;
   pointer-events: none;
   z-index: 2;
 }
 
-.page-line::before,
-.page-line::after {
+.page-line::before {
   content: '';
-  flex: 1;
-  height: 1px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
   border-top: 1px dashed #d97745;
 }
 
 .page-line span {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, -50%);
   color: #d97745;
   font-size: 10px;
   font-weight: 600;

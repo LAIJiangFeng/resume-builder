@@ -49,7 +49,7 @@ __screenshots__/
 # Code review artifacts
 code-review/
 
-# requirements artifacts
+# Requirements artifacts
 docs/requirements/
 
 # Workflow

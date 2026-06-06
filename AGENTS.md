@@ -1,80 +1,41 @@
 <!-- author: jf -->
-# AI 执行规范
+# AI 执行入口
 
-## `.rules` 规则文档引用（强制）
+本文件只保留仓库协作入口和必要限制；具体细则以 `.rules/` 下规则文档为准。
 
-1. 处理本仓库任务时，必须先阅读并遵守 `.rules/` 目录下的规则文档。
-2. `.rules/` 下规则文档与本文件共同构成仓库级强制约束；如无更高优先级用户指令，不得绕过。
-3. 当前必须遵守的规则文档如下：
-   - `.rules/python-ai-backend-mandatory-rules.md`
-   - `.rules/harness-mcp-workflow-rules.md`
-4. 若后续 `.rules/` 目录新增规则文档，默认同样属于必须遵守的仓库规则；执行任务前应一并读取。
+## 必须遵守
 
-本规范适用于本仓库内所有 AI 协作与自动化改动。
+1. 对话必须使用中文。
+2. 处理本仓库任务前，必须先阅读并遵守 `.rules/` 下与任务相关的规则文档。
+3. `.rules/` 下新增规则默认同样属于仓库级强制规则；如规则索引未及时更新，也不得绕过。
+4. 新增或修改文件时，除 `mapper.xml` 外必须标记作者为 `jf`，且禁止出现作者为 `ai` 的标识。
+5. 新增或修改代码中的注释必须使用中文。
+6. 禁止新增或修改测试代码、测试脚本、fixture 或 mock 文件，详见 `.rules/testing-rules.md`。
+7. 修改或设计 UI 界面时，优先使用 `UI-Ux-Pro-Max` Skill，第二选择才是 `Frontend Design` Skill，详见 `.rules/frontend-mandatory-rules.md`。
 
-## 测试代码约束（强制）
+## Harness 触发门禁
 
-1. 禁止在项目中新增任何测试代码。
-2. 禁止修改现有测试代码。
-3. 禁止为测试目的新增以下内容：
-   - `src/test`、`__tests__`、`tests` 目录下任何文件
-   - `*.test.*`、`*.spec.*` 文件
-   - 测试专用脚本、测试夹具（fixture）、测试桩（mock）文件
-4. 禁止为了验证问题而提交“临时测试代码”。
+1. 用户要求新增、修改、修复、优化或调整功能时，默认必须触发 Harness 流程；典型说法包括“改功能”“加功能”“修一下”“优化一下”“调整页面”“接接口”“改接口”“改存储”“改提示词”。
+2. 触发 Harness 后，禁止直接进入代码修改；必须先读取 `.rules/harness-mcp-workflow-rules.md`，输出任务拆分、验收细节和需求文档安排。
+3. 涉及前端、后端、数据库、OpenAI、PR / Issue / Review 或 UI 的任务，还必须同步读取对应专项规则。
+4. 用户明确要求“不走 Harness”或“只做一次性小改”时，仍必须说明跳过原因，并保留必要的验证说明。
 
-## 数据库与 Mapper SQL 约束（强制）
+## Rules 索引
 
-1. 后端运行代码中禁止写死 PostgreSQL、MySQL 或其他数据库 SQL 字符串，包括 `SELECT`、`INSERT`、`UPDATE`、`DELETE`、`CREATE`、`ALTER`、`DROP`、索引初始化等语句。
-2. MySQL 如确需自定义业务 SQL，必须写在 `mapper.xml` 文件中，不允许直接写在 Mapper 接口注解里（如 `@Select`、`@Update`、`@Insert`、`@Delete`），也不允许写在 Controller、Service、Config 或其他 Java 代码中。
-3. Spring AI 后端 Java `mapper/` 目录只允许存放带 `@Mapper` 的 Mapper 接口；MyBatis 查询投影、结果行对象、Row/Projection 类必须放入 `entity/`，对外 API 模型才放入 `dto/`。
-4. PostgreSQL + pgvector 向量库存储与相似度检索必须优先使用 Spring AI `VectorStore` / `PgVectorStore` 提供的 `add`、`similaritySearch` 等能力，禁止在后端代码中手写 pgvector 插入、检索或建表 SQL。
-5. 建表、索引、初始化等一次性 SQL（非项目运行期业务逻辑）必须写入固定 SQL 目录下的独立 `.sql` 文件，固定 SQL 目录为：`sql/`。
-6. 禁止在应用启动流程中执行项目自写的一次性 SQL，也禁止 Spring AI `PgVectorStore` 自动建表；pgvector 表必须由开发者手工执行 `sql/pgvector_rag_schema.sql` 创建，Spring AI 后端必须保持 `initializeSchema(false)`。
+| 规则文件 | 作用 | 什么时候用 |
+| --- | --- | --- |
+| `.rules/global-rules.md` | 定义中文交互、任务执行边界、Git、数据库访问工具和全局优先级。 | 所有任务默认读取，尤其是涉及执行方式、分支、提交或数据库操作时。 |
+| `.rules/git-rules.md` | 定义 Git 分支英文命名、分支前缀、提交信息和提交说明 Markdown 文档规范。 | 创建分支、准备提交、编写提交说明文档、处理 PR 或版本控制协作时读取。 |
+| `.rules/code-conventions.md` | 定义通用代码规范、命名、翻译文本、安全、性能、文档维护和测试策略边界。 | 涉及代码、文案、提示文本、接口命名、文档维护或质量收尾时读取。 |
+| `.rules/testing-rules.md` | 定义测试代码禁令、允许验证方式、前后端验证边界和交付验证说明。 | 所有新增、修改、修复、重构、规则调整、提交前检查和验证任务都要读取。 |
+| `.rules/database-rules.md` | 定义 MySQL、PostgreSQL、pgvector、Mapper SQL、一次性 SQL、会话存储和数据库访问工具规则。 | 涉及数据库、SQL、Mapper、`sql/`、pgvector、RAG 向量表或 AI 面试会话存储时读取。 |
+| `.rules/frontend-mandatory-rules.md` | 定义前端产品目标、目录边界、UI 设计、API / Service 分层和前端验证要求。 | 修改 `src/` 下页面、组件、模板、样式、服务、接口或状态管理时读取。 |
+| `.rules/backend-mandatory-rules.md` | 定义后端通用产品目标、目录扩展、文件职责、分层边界和后端协作要求。 | 涉及 `python-ai-backend/`、`spring-ai-backend/`、后端接口、AI 能力编排或目录调整时读取。 |
+| `.rules/python-ai-backend-mandatory-rules.md` | 定义 `python-ai-backend/` 的分层架构、依赖方向、业务链路、流程注释和内置提示词语言要求。 | 修改 Python AI 后端接口、用例、领域、基础设施、RAG、音频、Realtime 或提示词时读取。 |
+| `.rules/spring-ai-backend-mandatory-rules.md` | 定义 `spring-ai-backend/` 的目录职责、Spring AI 分层、SQL 存放、pgvector、Mapper 和内置提示词要求。 | 修改 Java AI 后端、Spring AI、Mapper、`mapper.xml`、`sql/`、pgvector、RAG、面试会话或 Realtime 时读取。 |
+| `.rules/harness-mcp-workflow-rules.md` | 定义 Harness 与 MCP 使用顺序、新功能拆分、验收细节、需求文档、Playwright / GitHub / OpenAI 文档使用边界。 | 涉及新功能、行为变更、多步骤优化、OpenAI 能力、前端交互验证、PR / Issue / Review 或知识回写时读取。 |
+| `.rules/code-review-rules.md` | 定义提交前 `code-review` 询问、执行、修复确认和 `code-review-fix` 边界。 | 准备提交、处理代码审查、修复审查问题或用户要求 review 时读取。 |
 
-## 会话存储数据库约束（强制）
+## 协作参考
 
-1. AI 面试会话存储数据库固定为 MySQL。
-2. PostgreSQL 仅用于向量存储（pgvector）相关能力，不用于会话表存储。
-3. 会话建表脚本仅保留一份：`sql/interview_schema.sql`。
-4. MySQL 面试会话表和 pgvector RAG 向量表都禁止应用启动自动建表，仍由开发者手工执行 `sql/interview_schema.sql` 与 `sql/pgvector_rag_schema.sql`。
-
-## 文件作者标识约束（强制）
-
-1. 除 `mapper.xml` 外，新增或修改的文件必须标记作者信息（如注释头、元数据）。
-2. 作者必须为 `jf`。
-3. 禁止出现作者为 `ai` 的标识（包括 `author: ai`、`作者：ai`、`created by ai` 等）。
-
-## 允许的验证方式（不改项目代码）
-
-1. 运行现有命令进行验证（不新增文件、不改源码）：
-   - `npm run type-check`
-   - `npm run lint`
-   - `npm run build` 或 `npm run build-only`
-2. 本地手工验证（UI 操作、接口调用、日志观察）。
-3. 一次性命令行验证（不落盘到项目文件，不生成新代码文件）。
-
-## 提交流程要求
-
-1. 所有功能修复与优化，不得以“补测试代码”作为交付前置条件。
-2. 变更说明中必须记录验证方式与验证结果。
-3. 评审发现测试代码变更时，必须先移除再继续评审。
-
-## 协作参考文档
-
-1. `docs/harness-engineering-workflow.md`
-   - 仓库级 Harness Engineering 工作流，适用于任务路由、知识回写、熵治理与跨前后端协作时参考。
-
-## MCP 使用要求
-
-1. 涉及 OpenAI 能力、官方文档、模型选择、API 迁移与 SDK 接入时，必须优先按 `.rules/harness-mcp-workflow-rules.md` 使用 `openaiDeveloperDocs`。
-2. 涉及前端页面、交互、模板、流式渲染与视觉验证时，必须优先按 `.rules/harness-mcp-workflow-rules.md` 使用 `playwright`。
-3. 涉及 PR、Issue、Review、Checks 与远程协作上下文时，必须优先按 `.rules/harness-mcp-workflow-rules.md` 使用 `github`。
-4. `memory` 只能用于长期个人偏好，不得替代仓库规则、接口契约与项目事实。
-
-## 新功能开发要求
-
-1. 新功能、行为变更或多步骤优化任务，必须先按 `.rules/harness-mcp-workflow-rules.md` 输出细化任务清单，不得直接跳过拆分进入实现。
-2. 用户需求不清晰时，必须先提供一版初步任务 todo list 让用户澄清或确认。
-3. 在用户确认细化任务后，必须先生成验收细节 list 与需求文档 `.md`，再开始顺序执行。
-4. 执行时必须按细化任务顺序逐条完成，并在需求文档中同步标记状态。
-5. 全部细化任务完成后，必须按验收细节 list 对每一项给出 `通过` 或 `不通过` 结论；存在 `不通过` 时不得声称完成，必须修正并重新进行全量验收。
+- `docs/harness-engineering-workflow.md`：仓库级 Harness Engineering 工作流，适用于任务路由、知识回写、熵治理与跨前后端协作。
