@@ -10,9 +10,11 @@
 凡涉及 `spring-ai-backend/` 的新增、修改、重构、迁移和目录调整，默认都必须遵守本文档。
 
 注意：
-- 本文档位于 `.rules/` 下，属于仓库级强制规则，不视为普通说明文档。
+- 本文档属于仓库级强制规则，不视为普通说明文档。
 - 本文档采用“**基于当前结构强化约束**”原则：优先固定现有目录职责，不强制一步演进为 DDD、六边形架构或多模块工程。
 - 如当前实现与本文档冲突，后续调整应优先向本文档靠拢；如确需例外，应先更新规则文档，再改代码。
+- 涉及数据库、SQL、Mapper、pgvector 或会话存储时，必须同步遵守数据库与 SQL 强制规则。
+- 涉及验证或测试代码边界时，必须同步遵守测试与验证强制规则。
 
 ---
 
@@ -53,7 +55,7 @@
 ```text
 spring-ai-backend/
 ├─ pom.xml
-├─ README.md
+├─ README
 ├─ .env.example
 ├─ docker-compose.yml
 ├─ ../sql/
@@ -366,36 +368,9 @@ controller -> service -> mapper -> entity
 
 ## 7. 数据库与 SQL 强制约束
 
-### 7.1 会话存储数据库
+Spring AI 后端涉及数据库、SQL、Mapper、pgvector、一次性 SQL 与会话存储时，必须统一遵守数据库与 SQL 强制规则。
 
-- AI 面试会话存储数据库固定为 MySQL。
-- PostgreSQL 仅用于向量存储（pgvector）相关能力。
-- **禁止**把会话表、消息表等业务会话数据落到 PostgreSQL。
-
-### 7.2 一次性 SQL 目录
-
-- 建表、索引、初始化等一次性 SQL，必须写入仓库根目录 `sql/` 下的独立 `.sql` 文件。
-- **禁止**把一次性建表 SQL 写进 Java 字符串、启动逻辑或 README 示例中替代正式 SQL 文件。
-- **pgvector 建表要求**：禁止 Spring 后端自动建表，Spring AI `PgVectorStore` 必须保持 `initializeSchema(false)`；表结构只能由开发者手工执行 `sql/pgvector_rag_schema.sql` 创建。
-
-### 7.3 会话建表脚本
-
-- 会话建表脚本仅保留一份：`sql/interview_schema.sql`。
-- **禁止**在其他目录复制第二份会话建表脚本。
-
-### 7.4 业务 SQL 存放位置
-
-- 后端 Java 代码中禁止写死 PostgreSQL、MySQL 或其他数据库 SQL 字符串。
-- MySQL 自定义业务 SQL 必须写在 `src/main/resources/mapper/*.xml`。
-- **禁止**写在 Mapper 注解中。
-- **禁止**写在 Controller、Service、Config、Repository 或其他 Java 代码中直接拼接执行。
-- PostgreSQL + pgvector 向量库存储与相似度检索必须通过 Spring AI `VectorStore` / `PgVectorStore` 的 `add`、`similaritySearch` 等能力完成。
-
-### 7.5 启动阶段限制
-
-- **禁止**在应用启动流程中执行项目自写的一次性建表 SQL。
-- 表结构初始化由开发者手工执行。
-- **pgvector 例外收紧**：不再允许 Spring AI `PgVectorStore` 内部 schema 初始化创建向量表；禁止在项目代码中通过 `JdbcTemplate.execute`、字符串 SQL 或类似方式自写 DDL，向量表只能由 `sql/pgvector_rag_schema.sql` 手工创建。
+本文档只保留 Spring AI 后端目录职责与分层边界；数据库细则以数据库与 SQL 强制规则为准。
 
 ---
 
