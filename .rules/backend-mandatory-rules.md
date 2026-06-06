@@ -3,14 +3,14 @@
 
 ## 1. 规则定位
 
-本文档用于定义 `resume-builder` 仓库后端范围内的产品背景、后端目标、目录扩展边界、文件拆分要求、数据库约束与 AI 执行限制。
+本文档用于定义 `resume-builder` 仓库后端范围内的产品背景、后端目标、目录扩展边界、文件拆分要求与 AI 执行限制。
 
 本仓库后端不是普通的示例 API 工程，而是一个服务 **简历编辑、简历优化、AI 面试** 场景的 AI 业务后端，目标是帮助求职者更快、更精准地完成简历优化、模拟面试与面试准备。
 
-凡涉及 `python-ai-backend/`、`spring-ai-backend/` 的新增、修改、重构、迁移、目录调整、接口实现、AI 能力编排与数据库相关变更，默认都必须遵守本文档。
+凡涉及 `python-ai-backend/`、`spring-ai-backend/` 的新增、修改、重构、迁移、目录调整、接口实现与 AI 能力编排，默认都必须遵守本文档。
 
 注意：
-- 本文档位于 `.rules/` 下，属于仓库级强制规则，不视为普通说明文档。
+- 本文档属于仓库级强制规则，不视为普通说明文档。
 - 本文档是后端通用规则；涉及 `python-ai-backend/` 与 `spring-ai-backend/` 时，还必须同时遵守对应专项规则。
 - 如当前实现与本文档冲突，后续改动应优先向本文档靠拢；如确需例外，应先更新规则文档，再改代码。
 
@@ -41,9 +41,10 @@
 
 ### 3.1 规则读取要求
 
-1. 处理后端任务时，必须先阅读并遵守 `.rules/` 下与后端相关的规则文档。
-2. `.rules/` 下规则文档与 `AGENTS.md` 共同构成仓库级强制约束；如无更高优先级用户指令，不得绕过。
-3. 后端改动除遵守本文档外，还必须同步遵守 `.rules/global-rules.md` 与 `.rules/code-conventions.md`。
+1. 处理后端任务时，必须先阅读并遵守规则目录下与后端相关的规则文档。
+2. 规则目录与入口规则共同构成仓库级强制约束；如无更高优先级用户指令，不得绕过。
+3. 后端改动除遵守本文档外，还必须同步遵守全局、代码规范与测试验证规则。
+4. 后端改动涉及数据库、SQL、Mapper、pgvector 或会话存储时，必须同步遵守数据库与 SQL 强制规则。
 
 ### 3.2 文件作者标识约束
 
@@ -86,7 +87,7 @@
 
 ## 5. Python AI 后端协作规则
 
-`python-ai-backend/` 的功能边界、目录职责与依赖方向，必须严格遵守 `.rules/python-ai-backend-mandatory-rules.md`。
+`python-ai-backend/` 的功能边界、目录职责与依赖方向，必须严格遵守 Python AI 后端强制规则。
 
 额外要求：
 - 禁止因为临时功能开发，绕开既有 `api -> application -> domain <- infrastructure` 依赖边界。
@@ -97,7 +98,7 @@
 
 ## 6. Spring AI 后端补充强制规则
 
-除 `.rules/spring-ai-backend-mandatory-rules.md` 外，还必须额外满足以下项目级要求：
+除 Spring AI 后端强制规则外，还必须额外满足以下项目级要求：
 
 ### 6.1 Controller 边界
 
@@ -117,66 +118,32 @@
 1. `spring-ai-backend/src/main/java/com/resumebuilder/springaibackend/service/` 只允许存放真正带 `@Service` 注解、且承担业务用例或流程编排职责的类。
 2. 没有 `@Service` 注解的 Java 文件一律不得放入 `service/`。
 3. `@Service` 不是放入 `service/` 的充分条件；如果主要职责是 SDK client、HTTP client support、provider adapter、VectorStore 适配、pgvector repository、Embedding provider、OCR 实现、WebSocket handler、parser、chunker、support/helper，则必须放入对应外层职责目录。
-4. Spring AI 后端允许使用的非业务编排外层职责目录，以 `.rules/spring-ai-backend-mandatory-rules.md` 为准，当前包括 `client/`、`vector/`、`embedding/`、`ocr/`、`realtime/`、`parser/`、`chunking/`。
+4. Spring AI 后端允许使用的非业务编排外层职责目录，以 Spring AI 后端强制规则为准，当前包括 `client/`、`vector/`、`embedding/`、`ocr/`、`realtime/`、`parser/`、`chunking/`。
 5. 禁止为了把支撑类留在 `service/` 中而随意添加 `@Service` 注解。
 
 ---
 
-## 7. 数据库与 SQL 强制约束
+## 7. 数据库与 SQL 规则引用
 
-1. 后端运行代码中禁止写死 PostgreSQL、MySQL 或其他数据库 SQL 字符串，包括 `SELECT`、`INSERT`、`UPDATE`、`DELETE`、`CREATE`、`ALTER`、`DROP`、索引初始化等语句。
-2. MySQL 如确需自定义业务 SQL，必须写在 `mapper.xml` 文件中，不允许直接写在 Mapper 接口注解里，例如 `@Select`、`@Update`、`@Insert`、`@Delete`，也不允许写在 Controller、Service、Config 或其他 Java 代码中。
-3. Spring AI 后端 Java `mapper/` 目录只允许存放带 `@Mapper` 的 Mapper 接口；MyBatis 查询投影、结果行对象、Row/Projection 类必须放入 `entity/`，对外 API 模型才放入 `dto/`。
-4. PostgreSQL + pgvector 向量库存储与相似度检索必须优先使用 Spring AI `VectorStore` / `PgVectorStore` 提供的 `add`、`similaritySearch` 等能力，禁止在后端代码中手写 pgvector 插入、检索或建表 SQL。
-5. 建表、索引、初始化等一次性 SQL（非项目运行期业务逻辑）必须写入固定 SQL 目录下的独立 `.sql` 文件，固定 SQL 目录为：`sql/`。
-6. 禁止在应用启动流程中执行项目自写的一次性 SQL，也禁止 Spring AI `PgVectorStore` 自动建表；pgvector 表必须由开发者手工执行 `sql/pgvector_rag_schema.sql` 创建，Spring AI 后端必须保持 `initializeSchema(false)`。
+后端数据库、SQL、Mapper、pgvector、一次性 SQL 与会话存储规则统一遵守数据库与 SQL 强制规则。
 
 ---
 
-## 8. 会话存储数据库约束
+## 8. 测试与验证规则引用
 
-1. AI 面试会话存储数据库固定为 MySQL。
-2. PostgreSQL 仅用于向量存储（pgvector）相关能力，不用于会话表存储。
-3. 会话建表脚本仅保留一份：`sql/interview_schema.sql`。
-4. MySQL 面试会话表和 pgvector RAG 向量表都禁止应用启动自动建表，仍由开发者手工执行 `sql/interview_schema.sql` 与 `sql/pgvector_rag_schema.sql`。
+后端任务的测试代码禁令、允许验证方式和交付验证说明统一遵守测试与验证强制规则。
 
 ---
 
-## 9. 测试代码约束
+## 9. 提交流程要求
 
-1. 禁止在项目中新增任何测试代码。
-2. 禁止修改现有测试代码。
-3. 禁止为测试目的新增以下内容：
-   - `src/test`、`__tests__`、`tests` 目录下任何文件
-   - `*.test.*`、`*.spec.*` 文件
-   - 测试专用脚本、测试夹具（fixture）、测试桩（mock）文件
-4. 禁止为了验证问题而提交“临时测试代码”。
-
----
-
-## 10. 允许的验证方式
-
-允许使用以下方式验证，但不得通过新增测试代码完成验证：
-
-1. 运行现有命令进行验证，不新增文件、不改测试源码：
-   - `npm run type-check`
-   - `npm run lint`
-   - `npm run build`
-   - `npm run build-only`
-2. 本地手工验证，例如 UI 操作、接口调用、日志观察。
-3. 一次性命令行验证，不落盘到项目文件，不生成新代码文件。
-
----
-
-## 11. 提交流程要求
-
-1. 所有功能修复与优化，不得以“补测试代码”作为交付前置条件。
+1. 所有功能修复与优化，不得以“补测试代码”作为交付前置条件，具体规则见测试与验证强制规则。
 2. 变更说明中必须记录验证方式与验证结果。
-3. 评审发现测试代码变更时，必须先移除再继续评审。
+3. 评审发现测试代码变更时，必须先按测试与验证强制规则移除再继续评审。
 
 ---
 
-## 12. 结论
+## 10. 结论
 
 后端的一切改动，都必须服务“帮助求职者更快、更精准地进行面试并提升通关效率”这一核心目标。
 

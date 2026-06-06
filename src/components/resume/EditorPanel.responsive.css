@@ -16,6 +16,163 @@
   opacity: 0;
 }
 
+@container (max-width: 700px) {
+  .editor-panel {
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .editor-toolbar {
+    gap: 8px;
+  }
+
+  .search-input {
+    height: 36px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .stats-row {
+    gap: 8px;
+  }
+
+  .stat-card {
+    padding: 10px 12px;
+    border-radius: 9px;
+  }
+
+  .stat-label {
+    font-size: 10.5px;
+  }
+
+  .stat-value {
+    font-size: 26px;
+  }
+
+  .info-editor {
+    padding: 12px;
+  }
+
+  .info-editor-header {
+    gap: 8px;
+  }
+
+  .editor-title {
+    font-size: 16px;
+  }
+
+  .editor-subtitle {
+    font-size: 11.5px;
+  }
+
+  .btn-import,
+  .btn-save {
+    height: 34px;
+    padding: 0 10px;
+    font-size: 11.5px;
+  }
+
+  .floating-tools {
+    margin-right: 2px;
+  }
+
+  .floating-tools-stack {
+    gap: 9px;
+  }
+
+  .floating-tool-btn {
+    width: 46px;
+    height: 46px;
+  }
+
+  .module-sections {
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .module-head {
+    height: 40px;
+    padding: 0 10px;
+  }
+
+  .module-head-left {
+    gap: 8px;
+  }
+
+  .module-head-title {
+    font-size: 13.5px;
+  }
+
+  .module-body {
+    padding: 0 8px 8px;
+  }
+
+  .module-body :deep(.section-body) {
+    padding: 8px;
+  }
+
+  .module-body :deep(.entry-card) {
+    padding: 10px;
+    margin-bottom: 9px;
+  }
+
+  .module-body :deep(.form-grid),
+  .module-body :deep(.form-grid-2),
+  .module-body :deep(.form-grid-3) {
+    gap: 10px;
+  }
+
+  .module-body :deep(.form-label) {
+    font-size: 11.5px;
+  }
+
+  .module-body :deep(.form-input),
+  .module-body :deep(.form-textarea) {
+    padding: 7px 9px;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .module-body :deep(.form-input) {
+    min-height: 36px;
+  }
+
+  .module-body :deep(.form-textarea) {
+    min-height: 74px;
+  }
+
+  .module-body :deep(.rich-toolbar) {
+    padding: 3px 6px;
+  }
+
+  .module-body :deep(.tool-btn) {
+    min-width: 24px;
+    height: 22px;
+    font-size: 11px;
+  }
+
+  .module-body :deep(.tool-select) {
+    height: 22px;
+    font-size: 11px;
+  }
+
+  .module-body :deep(.tool-color) {
+    width: 22px;
+    height: 22px;
+  }
+
+  .module-body :deep(.editor-area) {
+    padding: 7px 9px;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .module-body :deep(.editor-placeholder) {
+    top: 7px;
+    font-size: 12px;
+  }
+}
+
 @container (max-width: 560px) {
   .editor-panel {
     padding: 6px 7px 8px;

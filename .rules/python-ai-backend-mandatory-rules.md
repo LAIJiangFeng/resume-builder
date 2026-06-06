@@ -9,9 +9,11 @@
 
 注意：
 
-- 本文档位于 `.rules/` 下，应按强制规则理解，不视为普通说明文档。
+- 本文档应按强制规则理解，不视为普通说明文档。
 - 目录结构可以分阶段落地，但依赖方向和层级边界不能被破坏。
 - 如果当前实现与本文档冲突，应优先调整实现；若确需例外，应先更新规则文档，再改代码。
+- 涉及数据库、SQL、pgvector 或会话存储时，必须同步遵守数据库与 SQL 强制规则。
+- 涉及验证或测试代码边界时，必须同步遵守测试与验证强制规则。
 
 ---
 
@@ -146,15 +148,15 @@ realtime_routes.py
 ```text
 python-ai-backend/
 ├─ pyproject.toml
-├─ README.md
+├─ README
 ├─ .env.example
 ├─ .gitignore
 ├─ scripts/
 │  ├─ start_local.py
 │  └─ check_env.py
 ├─ docs/
-│  ├─ architecture.md
-│  └─ api.md
+│  ├─ architecture 文档
+│  └─ api 文档
 └─ app/
    ├─ __init__.py
    ├─ main.py
@@ -212,7 +214,7 @@ python-ai-backend/
 
 - 只存项目配置，不承载业务说明。
 
-### 7.2 `README.md`
+### 7.2 `README`
 
 职责：
 

@@ -270,7 +270,7 @@ function isActive(cmd: string): boolean {
 }
 
 .editor-area {
-  padding: 8px 10px 8px 24px;
+  padding: 8px 10px;
   font-size: 0.88rem;
   line-height: 1.7;
   color: var(--text-primary);
@@ -293,24 +293,27 @@ function isActive(cmd: string): boolean {
 }
 
 /* List styles inside editor */
-.editor-area ul {
+.editor-area :deep(ul) {
   list-style-type: disc;
-  padding-left: 18px;
+  list-style-position: outside;
+  padding-left: 16px;
   margin: 4px 0;
 }
 
-.editor-area ol {
+.editor-area :deep(ol) {
   list-style-type: decimal;
-  padding-left: 18px;
+  list-style-position: outside;
+  padding-left: 16px;
   margin: 4px 0;
 }
 
-.editor-area li {
+.editor-area :deep(li) {
+  display: list-item;
   margin-bottom: 2px;
   font-size: inherit;
 }
 
-.editor-area li::marker {
+.editor-area :deep(li)::marker {
   font-size: 1em;
   font-weight: inherit;
   color: currentColor;
@@ -338,7 +341,7 @@ function isActive(cmd: string): boolean {
   }
 
   .editor-area {
-    padding: 7px 9px 7px 22px;
+    padding: 7px 9px;
     line-height: 1.55;
   }
 }
