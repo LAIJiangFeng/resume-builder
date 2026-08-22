@@ -35,7 +35,9 @@
 ## Git 状态
 
 - 分支：`feat/versioned-database-migrations`
-- Code Review、commit、push、PR：未执行，等待用户选择。
+- Code Review：用户选择跳过。
+- commit、push：已执行，功能提交为 `0f02b1a`。
+- PR：`#27`，`https://github.com/LAIJiangFeng/resume-builder/pull/27`。
 
 ## Spec 回写
 

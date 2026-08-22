@@ -119,7 +119,7 @@ sql/
 - UI 设计：不适用。
 - 数据库执行：未执行生产数据库；已使用独立临时容器验证全新与旧版数据库迁移。
 - 本地执行边界：一次 WSL 环境变量门禁验证误触发默认 Compose 数据库迁移；MySQL 迁移前为空库，pgvector 的 RAG 表为 0 行，迁移前备份保存在仓库同级 `resume-builder-database-backups/`，本次启动的 MySQL 容器已移除。
-- Code Review、提交、推送和 PR：未执行。
+- Code Review：用户选择跳过；提交、推送和 PR 已执行，PR 为 `#27`。
 
 ## 13. 最终验收结果
 
