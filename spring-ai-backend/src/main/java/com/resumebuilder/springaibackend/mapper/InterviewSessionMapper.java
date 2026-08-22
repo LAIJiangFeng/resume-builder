@@ -11,5 +11,5 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface InterviewSessionMapper extends BaseMapper<InterviewSessionEntity> {
 
-    List<InterviewSessionSummaryRow> selectSessionSummaries(@Param("limit") int limit);
+    List<InterviewSessionSummaryRow> selectSessionSummaries(@Param("userId") String userId, @Param("limit") int limit);
 }

@@ -89,7 +89,7 @@ function resolvePreviewImageSrc(value: string): string {
 .template-picker-mask {
   position: fixed;
   inset: 0;
-  background: rgba(30, 20, 10, 0.28);
+  background: var(--overlay-backdrop);
   z-index: 1000;
   display: flex;
   justify-content: center;
@@ -102,9 +102,9 @@ function resolvePreviewImageSrc(value: string): string {
   max-height: min(86vh, 960px);
   overflow: hidden;
   border-radius: 16px;
-  background: #fff;
-  border: 1px solid #e7ddcf;
-  box-shadow: 0 24px 60px rgba(45, 37, 33, 0.22);
+  background: var(--surface-base);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-dialog);
   display: flex;
   flex-direction: column;
 }
@@ -115,16 +115,16 @@ function resolvePreviewImageSrc(value: string): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #efe5d8;
-  color: #2d2521;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 700;
 }
 
 .template-picker-close {
-  border: 1px solid #eadfcc;
-  background: #fff;
-  color: #7b6a5b;
+  border: 1px solid var(--border-color);
+  background: var(--surface-base);
+  color: var(--text-secondary);
   border-radius: 8px;
   width: 30px;
   height: 30px;
@@ -137,7 +137,8 @@ function resolvePreviewImageSrc(value: string): string {
 }
 
 .template-picker-close:hover {
-  background: #faf6f0;
+  background: var(--primary-50);
+  color: var(--primary-500);
 }
 
 .template-picker-close svg {
@@ -158,9 +159,9 @@ function resolvePreviewImageSrc(value: string): string {
 }
 
 .template-picker-item {
-  border: 1px solid #efe5d8;
+  border: 1px solid var(--border-color);
   border-radius: 12px;
-  background: #fff;
+  background: var(--surface-base);
   padding: 10px;
   text-align: left;
   cursor: pointer;
@@ -168,14 +169,14 @@ function resolvePreviewImageSrc(value: string): string {
 }
 
 .template-picker-item:hover {
-  border-color: #d4c2aa;
-  background: #fefcf9;
-  box-shadow: 0 8px 18px rgba(45, 37, 33, 0.1);
+  border-color: var(--primary-500);
+  background: var(--surface-soft);
+  box-shadow: var(--shadow-lg);
 }
 
 .template-picker-item-active {
-  border-color: #4b89dc;
-  box-shadow: 0 0 0 1px rgba(75, 137, 220, 0.2);
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 1px var(--theme-focus-ring);
 }
 
 .template-thumb {
@@ -183,8 +184,8 @@ function resolvePreviewImageSrc(value: string): string {
   aspect-ratio: 4 / 5;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #ece2d4;
-  background: #f7f2ea;
+  border: 1px solid var(--border-color);
+  background: var(--surface-soft);
 }
 
 .template-thumb img {
@@ -202,8 +203,8 @@ function resolvePreviewImageSrc(value: string): string {
   justify-content: center;
   font-size: 20px;
   font-weight: 800;
-  color: #b59c81;
-  background: linear-gradient(145deg, #f6eee2 0%, #fdf9f3 48%, #f2e8d9 100%);
+  color: var(--text-secondary);
+  background: var(--template-placeholder-gradient);
 }
 
 .template-info {
@@ -216,7 +217,7 @@ function resolvePreviewImageSrc(value: string): string {
 
 .template-name {
   margin: 0;
-  color: #2d2521;
+  color: var(--text-primary);
   font-size: 15px;
   font-weight: 700;
   line-height: 1.3;
@@ -227,8 +228,8 @@ function resolvePreviewImageSrc(value: string): string {
   height: 22px;
   padding: 0 8px;
   border-radius: 6px;
-  border: 1px solid #e9ded0;
-  color: #7b6a5b;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
   display: inline-flex;
@@ -261,23 +262,59 @@ function resolvePreviewImageSrc(value: string): string {
   }
 
   .template-picker-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(clamp(118px, 42vw, 176px), 1fr));
     gap: 8px;
     padding: 9px;
   }
 
   .template-picker-item {
     padding: 6px;
+    min-width: 0;
+  }
+
+  .template-info {
+    margin-top: 7px;
+    gap: 6px;
   }
 
   .template-name {
     font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .template-badge {
+    height: 20px;
+    padding: 0 6px;
+    font-size: 11px;
   }
 }
 
 @media (max-width: 420px) {
   .template-picker-list {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(clamp(108px, 44vw, 150px), 1fr));
+    gap: 7px;
+    padding: 8px;
+  }
+
+  .template-picker-item {
+    border-radius: 10px;
+    padding: 5px;
+  }
+
+  .template-thumb {
+    border-radius: 7px;
+  }
+
+  .template-name {
+    font-size: 12px;
+  }
+
+  .template-badge {
+    height: 18px;
+    padding: 0 5px;
+    font-size: 10px;
   }
 }
 </style>

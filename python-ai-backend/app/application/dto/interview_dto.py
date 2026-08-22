@@ -21,6 +21,7 @@ class InterviewHistoryItemDto:
 
 @dataclass(slots=True)
 class InterviewTurnRequestDto:
+    user_id: str = ""
     mode: str = "candidate"
     command: str = "continue"
     user_input: str | None = None
@@ -33,6 +34,7 @@ class InterviewTurnRequestDto:
 
     def model_dump(self) -> dict[str, Any]:
         return {
+            "userId": self.user_id,
             "mode": self.mode,
             "command": self.command,
             "userInput": self.user_input,

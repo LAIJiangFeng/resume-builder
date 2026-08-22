@@ -18,35 +18,21 @@ const props = defineProps<{
   composerHintText: string
   streamingAssistantMessageId: string | null
   sessionStarted: boolean
-  timerText: string
-  timerStatusText: string
-  currentRound: number
-  userTurns: number
-  assistantTurns: number
   canToggleVoice: boolean
-  canStart: boolean
-  canTogglePause: boolean
-  canFinish: boolean
   sessionFinished: boolean
-  timerRunning: boolean
   speechState: 'idle' | 'connecting' | 'connected' | 'transcribing'
-  speechStatusText: string
-  showControls?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:inputText', value: string): void
-  (e: 'start'): void
-  (e: 'togglePause'): void
-  (e: 'finish'): void
-  (e: 'reset'): void
-  (e: 'adjustDuration', delta: number): void
   (e: 'send'): void
   (e: 'toggleVoice'): void
 }>()
 
 const chatListRef = ref<HTMLElement | null>(null)
 const answerInputRef = ref<HTMLTextAreaElement | null>(null)
+const shouldFollowLatestMessage = ref(true)
+const FOLLOW_LATEST_THRESHOLD = 48
 const markdown = new MarkdownIt({
   html: false,
   linkify: true,
@@ -55,13 +41,13 @@ const markdown = new MarkdownIt({
 })
 
 const assistantName = computed(() => (props.mode === 'candidate' ? 'AI面试官' : 'AI候选人'))
-const pauseButtonLabel = computed(() => (props.timerRunning ? '暂停' : '继续'))
 const isComposerBusy = computed(() =>
   props.isLoading || ['submitting', 'accepted', 'processing', 'responding'].includes(props.requestState)
 )
+const visibleMessages = computed(() => props.messages.filter((item) => resolveMessageContent(item)))
 const composerPlaceholder = computed(() => {
   if (!props.sessionStarted) {
-    return '点击“开始”后，系统会生成第一轮问题或候选人开场回答'
+    return '等待开始'
   }
   if (props.sessionFinished) {
     return '当前会话已结束'
@@ -90,10 +76,14 @@ function normalizeAssistantContent(content: string): string {
       return parsed.assistantReply
     }
   } catch {
-    // Keep raw content when it is not valid JSON.
+    // 不是合法 JSON 时保留原始内容。
   }
 
   return text
+}
+
+function resolveMessageContent(item: ChatMessage): string {
+  return item.role === 'assistant' ? normalizeAssistantContent(item.content) : item.content.trim()
 }
 
 function renderMarkdown(content: string): string {
@@ -122,8 +112,8 @@ function syncTextareaHeight() {
 
   const isCompactViewport = window.matchMedia('(max-width: 768px)').matches
   const isNarrowViewport = window.matchMedia('(max-width: 480px)').matches
-  const minHeight = props.sessionFinished ? (isCompactViewport ? 28 : 72) : isNarrowViewport ? 40 : isCompactViewport ? 48 : 116
-  const maxHeight = props.sessionFinished ? (isCompactViewport ? 38 : 120) : isCompactViewport ? 86 : 220
+  const minHeight = props.sessionFinished ? 40 : isNarrowViewport ? 42 : isCompactViewport ? 42 : 48
+  const maxHeight = props.sessionFinished ? (isCompactViewport ? 60 : 82) : isCompactViewport ? 92 : 140
 
   textarea.style.height = '0px'
   textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight)}px`
@@ -132,6 +122,14 @@ function syncTextareaHeight() {
 function scrollToBottom() {
   if (!chatListRef.value) return
   chatListRef.value.scrollTop = chatListRef.value.scrollHeight
+}
+
+function handleChatScroll() {
+  const chatList = chatListRef.value
+  if (!chatList) return
+
+  const distanceToBottom = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight
+  shouldFollowLatestMessage.value = distanceToBottom <= FOLLOW_LATEST_THRESHOLD
 }
 
 function isPendingAssistantMessage(item: ChatMessage): boolean {
@@ -150,12 +148,14 @@ watch(
   () => ({
     inputText: props.inputText,
     requestState: props.requestState,
-    messages: props.messages.map((item) => `${item.id}:${item.content}`).join('\u0001'),
+    messages: visibleMessages.value.map((item) => `${item.id}:${resolveMessageContent(item)}`).join('\u0001'),
   }),
   async () => {
     await nextTick()
     syncTextareaHeight()
-    scrollToBottom()
+    if (shouldFollowLatestMessage.value) {
+      scrollToBottom()
+    }
   }
 )
 
@@ -166,66 +166,12 @@ onMounted(() => {
 
 <template>
   <section class="simulation-panel">
-    <section v-if="showControls !== false" class="card controls-card">
-      <div class="controls-top">
-        <div>
-          <p class="card-title">面试控制台</p>
-          <p class="card-helper">你可以调整时长并控制会话状态</p>
-        </div>
-        <span class="status-pill" :class="{ active: timerRunning }">
-          {{ timerStatusText }}
-        </span>
-      </div>
-
-      <div class="timer-row">
-        <span class="timer-label">时长</span>
-        <button type="button" class="mini-btn" @click="emit('adjustDuration', -5)">-5m</button>
-        <span class="timer-value">{{ timerText }}</span>
-        <button type="button" class="mini-btn" @click="emit('adjustDuration', 5)">+5m</button>
-
-        <button
-          v-if="canStart"
-          type="button"
-          class="action-btn primary"
-          :disabled="isLoading"
-          @click="emit('start')"
-        >
-          开始
-        </button>
-        <button
-          v-else
-          type="button"
-          class="action-btn"
-          :disabled="!canTogglePause"
-          @click="emit('togglePause')"
-        >
-          {{ pauseButtonLabel }}
-        </button>
-
-        <button type="button" class="action-btn danger" :disabled="!canFinish" @click="emit('finish')">
-          结束并评分
-        </button>
-        <button type="button" class="action-btn ghost" :disabled="isLoading" @click="emit('reset')">
-          重置
-        </button>
-      </div>
-    </section>
-
     <section class="card qa-card">
-      <div class="qa-header">
-        <p class="card-title">模拟面试问答</p>
-        <p class="qa-meta">轮次 {{ currentRound }} · 你 {{ userTurns }} 条 · AI {{ assistantTurns }} 条</p>
-      </div>
-
       <p v-if="errorMsg" class="error-text">{{ errorMsg }}</p>
 
-      <div ref="chatListRef" class="chat-list">
-        <p v-if="messages.length === 0" class="chat-empty">
-          点击“开始”后，系统会基于简历生成第一轮问题或候选人开场回答。
-        </p>
-
+      <div ref="chatListRef" class="chat-list" @scroll="handleChatScroll">
         <article
-          v-for="item in messages"
+          v-for="item in visibleMessages"
           :key="item.id"
           class="chat-item"
           :class="[
@@ -240,19 +186,19 @@ onMounted(() => {
           <template v-if="item.role === 'assistant'">
             <div v-if="isPendingAssistantMessage(item)" class="assistant-status">
               <span class="assistant-status-orb" aria-hidden="true" />
-              <span class="assistant-status-text">{{ requestStatusText || item.content }}</span>
+              <span class="assistant-status-text">{{ requestStatusText || resolveMessageContent(item) }}</span>
             </div>
             <template v-else>
               <div class="chat-markdown markdown-content" v-html="renderMarkdown(item.content)" />
               <span v-if="isStreamingAssistantMessage(item)" class="stream-cursor" aria-hidden="true">▌</span>
             </template>
           </template>
-          <p v-else class="chat-content">{{ item.content }}</p>
+          <p v-else class="chat-content">{{ resolveMessageContent(item) }}</p>
           <p v-if="item.score" class="score-tip">本轮评分 {{ item.score.score }} · {{ item.score.comment }}</p>
         </article>
       </div>
 
-      <form class="composer" @submit.prevent="handleComposerSubmit">
+      <form v-if="sessionStarted" class="composer" @submit.prevent="handleComposerSubmit">
         <div
           class="composer-shell"
           :class="{
@@ -306,157 +252,98 @@ onMounted(() => {
 
 <style scoped>
 .simulation-panel {
+  --interview-chat-font-size: 13px;
+  --interview-chat-meta-font-size: clamp(11px, 1.75vw, 12px);
+  --interview-code-font-size: 12.5px;
   flex: 1;
+  width: 100%;
+  max-width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .card {
-  border-radius: 12px;
-  border: 1px solid #e4d8cb;
-  background: #fff;
-  padding: 12px;
-}
-
-.controls-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.controls-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.card-title {
-  color: #2d2521;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.card-helper {
-  margin-top: 4px;
-  color: #8a7461;
-  font-size: 12px;
-}
-
-.status-pill {
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 700;
-  background: #f0ece6;
-  color: #7f7162;
-}
-
-.status-pill.active {
-  background: #eaf7ed;
-  color: #2b7a45;
-}
-
-.timer-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.timer-label {
-  color: #7c7062;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.timer-value {
-  min-width: 56px;
-  text-align: center;
-  border: 1px solid #dfd2c2;
-  border-radius: 8px;
-  background: #fff;
-  color: #2d2521;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 7px 8px;
-}
-
-.mini-btn {
-  border: 1px solid #dfd2c2;
-  border-radius: 8px;
-  background: #f7f3ee;
-  color: #5f5448;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 7px 10px;
-  cursor: pointer;
-}
-
-.action-btn {
-  border: 1px solid #dfd2c2;
-  border-radius: 8px;
-  background: #fff;
-  color: #5f5448;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 7px 10px;
-  cursor: pointer;
-}
-
-.action-btn.primary {
-  border-color: #2d2521;
-  background: #2d2521;
-  color: #fff;
-}
-
-.action-btn.danger {
-  border-color: #d97745;
-  background: #d97745;
-  color: #fff;
-}
-
-.action-btn.ghost {
-  background: #f7f3ee;
-}
-
-.action-btn:disabled,
-.mini-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+  border-radius: 22px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-base);
+  padding: 14px;
 }
 
 .qa-card {
   flex: 1 1 0;
+  width: 100%;
+  max-width: 100%;
   height: auto;
+  min-width: 0;
   min-height: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 10px;
   overflow: hidden;
+  border-radius: 24px;
+  padding: 16px;
+  box-shadow: var(--shadow-lg);
 }
 
-.qa-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.question-spotlight {
+  padding: 16px 18px;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  background: var(--surface-gradient);
+  box-shadow: var(--shadow-md);
 }
 
-.qa-meta {
-  color: #8a7461;
+.question-spotlight p {
+  margin: 0;
+  color: var(--primary-500);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.question-spotlight h2 {
+  display: -webkit-box;
+  margin: 10px 0 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: clamp(19px, 2vw, 25px);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.38;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.spotlight-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.spotlight-tags span {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--primary-50);
+  color: var(--primary-500);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .error-text {
-  border: 1px solid #f0c7c7;
+  border: 1px solid var(--border-danger);
   border-radius: 8px;
-  background: #fff1f1;
-  color: #bf2f2f;
+  background: var(--surface-danger);
+  color: var(--text-danger);
   font-size: 12px;
   font-weight: 600;
   padding: 8px 10px;
@@ -464,27 +351,38 @@ onMounted(() => {
 
 .chat-list {
   flex: 1;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
   min-height: 0;
-  border: 1px solid #eadfd1;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #fdfbf8 0%, #fbf7f1 100%);
-  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+  background: var(--surface-soft);
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .chat-empty {
-  color: #8a7461;
+  color: var(--text-secondary);
   font-size: 12px;
   text-align: center;
   margin: auto 0;
 }
 
 .chat-item {
-  border-radius: 14px;
-  padding: 12px;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 15px;
+  padding: 10px 11px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -492,36 +390,43 @@ onMounted(() => {
 }
 
 .chat-item.assistant {
-  background: #f7f1ea;
-  border: 1px solid #e8ddd0;
+  background: var(--surface-base);
+  border: 1px solid var(--border-color);
 }
 
 .chat-item.assistant.pending {
-  border-color: #dfc9b7;
-  box-shadow: 0 10px 24px rgba(77, 57, 31, 0.06);
+  border-color: var(--primary-200);
+  box-shadow: var(--shadow-brand);
 }
 
 .chat-item.user {
-  background: #fff;
-  border: 1px solid #e8ddd0;
+  background: var(--primary-50);
+  border: 1px solid var(--primary-200);
 }
 
 .chat-role {
-  color: #8a7461;
-  font-size: 12px;
+  color: var(--text-secondary);
+  font-size: var(--interview-chat-meta-font-size);
   font-weight: 700;
 }
 
 .chat-content {
-  color: #2d2521;
-  font-size: 13px;
+  max-width: 100%;
+  color: var(--text-primary);
+  font-size: var(--interview-chat-font-size);
+  line-height: 1.62;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 .chat-markdown {
-  color: #2d2521;
-  font-size: 13px;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--interview-chat-font-size);
+  overflow-wrap: anywhere;
   word-break: break-word;
   line-height: 1.65;
 }
@@ -530,8 +435,8 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: #6f5c49;
-  font-size: 13px;
+  color: var(--gray-600);
+  font-size: var(--interview-chat-font-size);
   font-weight: 600;
 }
 
@@ -539,8 +444,8 @@ onMounted(() => {
   width: 10px;
   height: 10px;
   border-radius: 999px;
-  background: linear-gradient(180deg, #1f1c17 0%, #d97745 100%);
-  box-shadow: 0 0 0 8px rgba(217, 119, 69, 0.12);
+  background: var(--primary-500);
+  box-shadow: 0 0 0 8px var(--theme-focus-ring);
   animation: pulse 1.3s ease-in-out infinite;
 }
 
@@ -551,6 +456,9 @@ onMounted(() => {
 
 .markdown-content :deep(p) {
   margin: 0 0 8px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .markdown-content :deep(p:last-child) {
@@ -565,54 +473,79 @@ onMounted(() => {
 
 .markdown-content :deep(li) {
   margin-bottom: 4px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .markdown-content :deep(pre) {
-  margin: 8px 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: #1f1c17;
-  color: #f8f4ef;
-  overflow: auto;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent-green) 34%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-green) 12%, transparent), transparent 34%),
+    var(--surface-code);
+  color: var(--text-on-code);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-on-code) 6%, transparent);
 }
 
 .markdown-content :deep(code) {
-  font-family: Consolas, 'Courier New', monospace;
-  font-size: 12px;
+  max-width: 100%;
+  font-family: 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  font-size: var(--interview-code-font-size);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markdown-content :deep(pre code) {
+  display: block;
+  min-width: 100%;
+  width: max-content;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .markdown-content :deep(p code),
 .markdown-content :deep(li code) {
-  background: #efe7de;
-  color: #5b4937;
+  border: 1px solid color-mix(in srgb, var(--accent-green) 22%, transparent);
+  background: var(--accent-green-soft);
+  color: var(--text-success);
   padding: 2px 6px;
   border-radius: 6px;
+  font-weight: 700;
 }
 
 .markdown-content :deep(blockquote) {
   margin: 8px 0;
   padding: 6px 10px;
-  border-left: 3px solid #d6b79e;
-  background: #f8f2ea;
-  color: #705b47;
+  border-left: 3px solid var(--primary-500);
+  background: var(--primary-50);
+  color: var(--gray-700);
 }
 
 .markdown-content :deep(a) {
-  color: #315f9a;
+  color: var(--primary-500);
 }
 
 .score-tip {
-  color: #315f9a;
+  color: var(--primary-500);
   font-size: 12px;
   font-weight: 600;
-  background: #eaf2ff;
+  background: var(--bg-sidebar);
   border-radius: 8px;
   padding: 6px 8px;
 }
 
 .stream-cursor {
   display: inline-block;
-  color: #d97745;
+  color: var(--primary-500);
   font-weight: 700;
   animation: blink 0.9s steps(1, end) infinite;
 }
@@ -635,28 +568,28 @@ onMounted(() => {
 }
 
 .composer-shell {
-  border: 1px solid #dfd2c2;
+  border: 1px solid var(--border-color);
   border-radius: 20px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbf7f2 100%);
-  padding: 14px 14px 12px;
+  background: var(--surface-gradient-vertical);
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 18px 36px rgba(45, 37, 33, 0.08);
+  box-shadow: var(--shadow-lg);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .composer-shell:focus-within {
-  border-color: #d97745;
-  box-shadow: 0 0 0 4px rgba(217, 119, 69, 0.12), 0 20px 40px rgba(45, 37, 33, 0.1);
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 4px var(--theme-focus-ring), var(--shadow-xl);
 }
 
 .composer-shell.busy {
-  border-color: #d8c1b0;
+  border-color: var(--primary-200);
 }
 
 .composer-shell.listening {
-  border-color: #d97745;
+  border-color: var(--primary-500);
 }
 
 .composer-shell.disabled {
@@ -667,17 +600,17 @@ onMounted(() => {
   width: 100%;
   border: none;
   background: transparent;
-  color: #2d2521;
-  font-size: 14px;
+  color: var(--text-primary);
+  font-size: var(--interview-chat-font-size) !important;
   line-height: 1.7;
-  min-height: 116px;
+  min-height: 104px;
   max-height: 220px;
   resize: none;
   padding: 0;
 }
 
 .answer-input::placeholder {
-  color: #9a8674;
+  color: var(--text-tertiary);
 }
 
 .answer-input:focus {
@@ -699,42 +632,9 @@ onMounted(() => {
 }
 
 .composer-hint {
-  color: #7b6f62;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
-}
-
-.speech-pill {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  max-width: 100%;
-  border-radius: 999px;
-  border: 1px solid #e1d5c8;
-  background: #f6f1ea;
-  color: #7c6d60;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  padding: 6px 10px;
-}
-
-.speech-pill.active {
-  border-color: #d8c3b0;
-  background: #fff7ee;
-  color: #8d5e38;
-}
-
-.speech-pill.listening {
-  border-color: #d97745;
-  background: rgba(217, 119, 69, 0.12);
-  color: #be5f28;
-}
-
-.speech-pill.transcribing {
-  border-color: #cba781;
-  background: #fff2e3;
-  color: #9c5b29;
 }
 
 .composer-actions {
@@ -761,29 +661,29 @@ onMounted(() => {
 }
 
 .voice-btn {
-  border-color: #ddd2c6;
-  background: #fff;
-  color: #64594d;
+  border-color: var(--border-color);
+  background: var(--surface-base);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .voice-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 12px 24px rgba(45, 37, 33, 0.08);
+  box-shadow: var(--shadow-lg);
 }
 
 .voice-btn.active {
-  border-color: #d97745;
-  background: rgba(217, 119, 69, 0.12);
-  color: #c65f23;
+  border-color: var(--primary-500);
+  background: var(--theme-focus-ring);
+  color: var(--primary-500);
 }
 
 .send-btn {
   border: none;
-  background: #1f1c17;
-  color: #fff;
+  background: var(--primary-500);
+  color: var(--text-inverse);
   cursor: pointer;
-  box-shadow: 0 14px 26px rgba(31, 28, 23, 0.2);
+  box-shadow: var(--shadow-brand);
 }
 
 .send-btn:hover:not(:disabled) {
@@ -802,8 +702,8 @@ onMounted(() => {
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  border: 2px solid rgba(255, 255, 255, 0.26);
-  border-top-color: #fff;
+  border: 2px solid color-mix(in srgb, var(--text-inverse) 26%, transparent);
+  border-top-color: var(--text-inverse);
   animation: spin 0.7s linear infinite;
 }
 
@@ -815,60 +715,19 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .simulation-panel {
+    --interview-chat-font-size: clamp(11.5px, 3.1vw, 12.5px);
+    --interview-chat-meta-font-size: clamp(10.5px, 2.8vw, 11.5px);
+    --interview-code-font-size: clamp(11px, 2.9vw, 12px);
     gap: 5px;
+    width: 100%;
+    max-width: 100%;
     height: 100%;
+    min-width: 0;
     min-height: 0;
   }
 
   .card {
     padding: 6px;
-  }
-
-  .controls-top,
-  .qa-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .timer-row {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    width: 100%;
-    align-items: stretch;
-  }
-
-  .timer-label,
-  .mini-btn,
-  .timer-value,
-  .action-btn {
-    min-width: 0;
-    min-height: 34px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 6px 6px;
-    font-size: 11.5px;
-    line-height: 1.15;
-    white-space: normal;
-  }
-
-  .timer-value {
-    width: 100%;
-  }
-
-  .action-btn {
-    grid-column: span 2;
-    order: 3;
-    width: 100%;
-  }
-
-  .action-btn.ghost {
-    order: 4;
-  }
-
-  .action-btn.danger {
-    grid-column: 1 / -1;
-    order: 5;
   }
 
   .composer-shell {
@@ -884,8 +743,8 @@ onMounted(() => {
   }
 
   .answer-input::placeholder {
-    color: #a58d78;
-    font-size: 12px;
+    color: var(--text-tertiary);
+    font-size: var(--interview-chat-meta-font-size);
   }
 
   .composer-footer {
@@ -905,11 +764,6 @@ onMounted(() => {
     line-height: 1.35;
   }
 
-  .speech-pill {
-    padding: 3px 6px;
-    font-size: 10px;
-  }
-
   .composer-actions {
     flex-shrink: 0;
     justify-content: flex-end;
@@ -919,8 +773,23 @@ onMounted(() => {
   .qa-card {
     gap: 6px;
     flex: 1 1 0;
+    width: 100%;
+    max-width: 100%;
     height: auto;
+    min-width: 0;
     min-height: 0;
+    border-radius: 22px;
+    padding: 12px;
+  }
+
+  .question-spotlight {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .question-spotlight h2 {
+    font-size: 18px;
+    -webkit-line-clamp: 3;
   }
 
   .chat-list {
@@ -981,3 +850,4 @@ onMounted(() => {
   }
 }
 </style>
+<style scoped src="./InterviewSimulationPanel.chatgpt.css"></style>

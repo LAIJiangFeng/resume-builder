@@ -1,0 +1,124 @@
+/* author: jf */
+.resume-selector-trigger {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+}
+
+.resume-selector-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resume-selector-trigger svg {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+
+.resume-selector-trigger svg.rotated {
+  color: var(--primary-500);
+  transform: rotate(180deg);
+}
+
+.resume-options {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 80;
+  width: 100%;
+  max-height: 252px;
+  display: grid;
+  gap: 4px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--surface-glass-strong);
+  box-shadow: var(--shadow-xl);
+  backdrop-filter: blur(12px);
+}
+
+.resume-options button {
+  width: 100%;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+}
+
+.resume-options button:hover,
+.resume-options button:focus-visible {
+  border-color: var(--primary-200);
+  outline: 0;
+  background: var(--primary-50);
+  color: var(--primary-600);
+}
+
+.resume-options button.selected {
+  background: var(--primary-50);
+  color: var(--primary-500);
+}
+
+.resume-option-icon {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+}
+
+.resume-options button.selected .resume-option-icon {
+  background: var(--surface-base);
+  color: var(--primary-500);
+}
+
+.resume-option-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resume-options-enter-active,
+.resume-options-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  transform-origin: top center;
+}
+
+.resume-options-enter-from,
+.resume-options-leave-to {
+  opacity: 0;
+  transform: translateY(-5px) scale(0.985);
+}

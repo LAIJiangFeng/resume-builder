@@ -26,10 +26,10 @@ public class ApiExceptionHandler {
 
         if (ex instanceof MethodArgumentNotValidException methodEx && !methodEx.getBindingResult().getFieldErrors().isEmpty()) {
             var fieldError = methodEx.getBindingResult().getFieldErrors().getFirst();
-            message = fieldError.getField() + ": " + fieldError.getDefaultMessage();
+            message = resolveValidationMessage(fieldError.getDefaultMessage());
         } else if (ex instanceof BindException bindEx && !bindEx.getBindingResult().getFieldErrors().isEmpty()) {
             var fieldError = bindEx.getBindingResult().getFieldErrors().getFirst();
-            message = fieldError.getField() + ": " + fieldError.getDefaultMessage();
+            message = resolveValidationMessage(fieldError.getDefaultMessage());
         }
 
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -74,6 +74,14 @@ public class ApiExceptionHandler {
         }
         return reason.trim();
     }
+
+    private String resolveValidationMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return "请求参数不合法";
+        }
+        return message.trim();
+    }
+
     private String buildDetailedMessage(Throwable ex) {
         if (ex == null) {
             return "未知服务异常";

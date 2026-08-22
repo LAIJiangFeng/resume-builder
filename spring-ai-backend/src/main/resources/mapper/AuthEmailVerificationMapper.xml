@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- author: jf -->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.resumebuilder.springaibackend.mapper.AuthEmailVerificationMapper">
+
+    <select id="selectByEmailForUpdate"
+            resultType="com.resumebuilder.springaibackend.entity.AuthEmailVerificationEntity">
+        SELECT
+            email,
+            code_hash AS codeHash,
+            expires_at AS expiresAt,
+            resend_available_at AS resendAvailableAt,
+            failed_attempts AS failedAttempts
+        FROM auth_email_verification_codes
+        WHERE email = #{email}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <insert id="insertCode"
+            parameterType="com.resumebuilder.springaibackend.entity.AuthEmailVerificationEntity">
+        INSERT INTO auth_email_verification_codes (
+            email,
+            code_hash,
+            expires_at,
+            resend_available_at,
+            failed_attempts
+        ) VALUES (
+            #{email},
+            #{codeHash},
+            #{expiresAt},
+            #{resendAvailableAt},
+            0
+        )
+    </insert>
+
+    <update id="updateCode"
+            parameterType="com.resumebuilder.springaibackend.entity.AuthEmailVerificationEntity">
+        UPDATE auth_email_verification_codes
+        SET code_hash = #{codeHash},
+            expires_at = #{expiresAt},
+            resend_available_at = #{resendAvailableAt},
+            failed_attempts = 0,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE email = #{email}
+    </update>
+
+    <update id="incrementFailedAttempts">
+        UPDATE auth_email_verification_codes
+        SET failed_attempts = failed_attempts + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE email = #{email}
+    </update>
+
+    <delete id="deleteByEmail">
+        DELETE FROM auth_email_verification_codes
+        WHERE email = #{email}
+    </delete>
+</mapper>

@@ -67,6 +67,8 @@ class Settings:
     # 这里只保留当前 Python 后端实际会用到的配置项。
     server_port: int
     app_cors_allowed_origins: str
+    auth_token_secret: str
+    auth_token_ttl_seconds: int
     app_rag_top_k: int
     app_interview_rag_top_k: int
     app_interview_rag_similarity_threshold: float
@@ -154,7 +156,12 @@ def get_settings() -> Settings:
 
     return Settings(
         server_port=_get_int("SERVER_PORT", 8999),
-        app_cors_allowed_origins=os.getenv("APP_CORS_ALLOWED_ORIGINS", "http://localhost:5173"),
+        app_cors_allowed_origins=os.getenv(
+            "APP_CORS_ALLOWED_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173",
+        ),
+        auth_token_secret=os.getenv("APP_AUTH_TOKEN_SECRET", "resume-builder-local-demo-auth-secret"),
+        auth_token_ttl_seconds=max(300, _get_int("APP_AUTH_TOKEN_TTL_SECONDS", 43_200)),
         app_rag_top_k=_get_int("APP_RAG_TOP_K", 5),
         app_interview_rag_top_k=max(1, _get_int("APP_INTERVIEW_RAG_TOP_K", _get_int("APP_RAG_TOP_K", 5))),
         app_interview_rag_similarity_threshold=_normalize_similarity_threshold(

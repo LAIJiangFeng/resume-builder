@@ -1,7 +1,8 @@
 ﻿<script setup lang="ts">
 // author: jf
-import { computed, onMounted, onUnmounted, reactive, ref, type Component } from 'vue'
+import { computed, onUnmounted, reactive, ref, type Component } from 'vue'
 import { useResumeStore } from '@/stores/resume'
+import ResumeToolbar from './ResumeToolbar.vue'
 import BasicInfoEditor from './editors/BasicInfoEditor.vue'
 import EducationEditor from './editors/EducationEditor.vue'
 import SkillsEditor from './editors/SkillsEditor.vue'
@@ -12,31 +13,37 @@ import SelfIntroEditor from './editors/SelfIntroEditor.vue'
 import AiOptimizePanel from '@/components/ai/AiOptimizePanel.vue'
 import { getModuleIconPaths, MODULE_ICON_VIEWBOX } from '@/constants/moduleIcons'
 
+const props = withDefaults(
+  defineProps<{
+    moduleSidebarCollapsed?: boolean
+  }>(),
+  {
+    moduleSidebarCollapsed: false,
+  }
+)
+
+const emit = defineEmits<{
+  (e: 'toggle-module-sidebar'): void
+}>()
+
 const store = useResumeStore()
-const showSaved = ref(false)
 const searchValue = ref('')
 const showAiPanel = ref(false)
-const moduleMenuOpen = ref(false)
-const moduleMenuRef = ref<HTMLElement | null>(null)
-const jsonImportInputRef = ref<HTMLInputElement | null>(null)
+const mobileModuleDrawerOpen = ref(false)
+const moduleNavListRef = ref<HTMLElement | null>(null)
 const draggingModuleKey = ref<string | null>(null)
 const dragOverModuleKey = ref<string | null>(null)
-const nowTick = ref(Date.now())
+let activeSortPointerId: number | null = null
+let activeSortPointerTarget: HTMLElement | null = null
+let activeSortStartX = 0
+let activeSortStartY = 0
+let activeSortMoved = false
+let activeSortMouse = false
+let sortPointerListenersBound = false
+let sortMouseListenersBound = false
 
 function handleAiClick() {
   showAiPanel.value = true
-}
-
-function toggleModuleMenu() {
-  moduleMenuOpen.value = !moduleMenuOpen.value
-}
-
-function handleDocumentPointerDown(event: MouseEvent) {
-  const target = event.target as Node | null
-  if (!target || !moduleMenuRef.value) return
-  if (!moduleMenuRef.value.contains(target)) {
-    moduleMenuOpen.value = false
-  }
 }
 
 const expanded = reactive<Record<string, boolean>>({
@@ -137,53 +144,6 @@ const completionPercent = computed(() => {
   return Math.round((total / enabledModules.length) * 100)
 })
 
-function handleSave() {
-  store.saveToStorage()
-  showSaved.value = true
-  setTimeout(() => {
-    showSaved.value = false
-  }, 1800)
-}
-
-function triggerJsonImport() {
-  jsonImportInputRef.value?.click()
-}
-
-async function handleImportJson(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-
-  const raw = await file.text()
-  input.value = ''
-  store.importResumeData(raw)
-}
-
-const isAutoSavePending = computed(() => store.nextAutoSaveAt !== null)
-const autoSaveChipText = computed(() => {
-  if (store.isSaving) {
-    return '自动保存中...'
-  }
-
-  const nextAt = store.nextAutoSaveAt
-  if (nextAt) {
-    const remainMs = Math.max(nextAt - nowTick.value, 0)
-    const remainSec = Math.max(remainMs / 1000, 0.1)
-    return `${remainSec.toFixed(1)}秒后自动保存`
-  }
-
-  const savedAt = store.lastSavedAt
-  if (!savedAt) {
-    return `自动保存间隔 ${Math.max(store.autoSaveDelayMs / 1000, 0.1).toFixed(1)}秒`
-  }
-
-  const elapsedMs = Math.max(nowTick.value - savedAt, 0)
-  const label = store.lastSaveMode === 'manual' ? '手动保存' : '自动保存'
-  if (elapsedMs < 2_000) return `刚刚${label}`
-  if (elapsedMs < 60_000) return `${Math.floor(elapsedMs / 1000)}秒前${label}`
-  return `${Math.floor(elapsedMs / 60_000)}分钟前${label}`
-})
-
 const isDefaultOrder = computed(() => store.isDefaultModuleOrder())
 
 function handleResetOrder() {
@@ -194,27 +154,19 @@ function toggleExpand(key: string) {
   expanded[key] = !expanded[key]
 }
 
+function handleModuleNavClick(key: string) {
+  toggleExpand(key)
+}
+
 function moduleIconPaths(key: string): string[] {
   return getModuleIconPaths(key)
 }
 
-function canMoveUp(key: string): boolean {
-  return store.canMoveModule(key, 'up')
-}
-
-function canMoveDown(key: string): boolean {
-  return store.canMoveModule(key, 'down')
-}
-
-function moveUp(key: string) {
-  store.moveModule(key, 'up')
-}
-
-function moveDown(key: string) {
-  store.moveModule(key, 'down')
-}
-
 function handleSwitchDragStart(event: DragEvent, key: string) {
+  if (activeSortPointerId !== null) {
+    event.preventDefault()
+    return
+  }
   if (key === 'basicInfo') {
     event.preventDefault()
     return
@@ -242,226 +194,384 @@ function handleSwitchDrop(targetKey: string) {
   dragOverModuleKey.value = null
 }
 
-function handleSwitchDragEnd() {
+function clearSwitchDragState() {
+  releaseSortPointer()
+  unbindSortPointerListeners()
+  unbindSortMouseListeners()
+  activeSortPointerId = null
+  activeSortPointerTarget = null
+  activeSortStartX = 0
+  activeSortStartY = 0
+  activeSortMoved = false
+  activeSortMouse = false
   draggingModuleKey.value = null
   dragOverModuleKey.value = null
 }
 
-let autoSaveTicker: ReturnType<typeof setInterval> | null = null
+function handleSwitchDragEnd() {
+  clearSwitchDragState()
+}
 
-onMounted(() => {
-  autoSaveTicker = setInterval(() => {
-    nowTick.value = Date.now()
-  }, 200)
-  document.addEventListener('mousedown', handleDocumentPointerDown)
-})
+function findPointerTargetModuleKey(clientX: number, clientY: number): string | null {
+  const list = moduleNavListRef.value
+  if (!list) return null
+
+  const listRect = list.getBoundingClientRect()
+  const edgePadding = 16
+  if (
+    clientX < listRect.left - edgePadding ||
+    clientX > listRect.right + edgePadding ||
+    clientY < listRect.top - edgePadding ||
+    clientY > listRect.bottom + edgePadding
+  ) {
+    return null
+  }
+
+  const items = Array.from(list.querySelectorAll<HTMLElement>('.module-nav-item[data-module-key]'))
+  let closestKey: string | null = null
+  let closestDistance = Number.POSITIVE_INFINITY
+
+  for (const item of items) {
+    const key = item.dataset.moduleKey
+    if (!key || key === draggingModuleKey.value) continue
+
+    const rect = item.getBoundingClientRect()
+    if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+      return key
+    }
+
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+    const distance = Math.hypot(clientX - centerX, clientY - centerY)
+    if (distance < closestDistance) {
+      closestDistance = distance
+      closestKey = key
+    }
+  }
+
+  return closestKey
+}
+
+function captureSortPointer(event: PointerEvent) {
+  const target = event.currentTarget
+  if (target instanceof HTMLElement) {
+    activeSortPointerTarget = target
+    target.setPointerCapture(event.pointerId)
+  }
+}
+
+function releaseSortPointer(event?: PointerEvent) {
+  const target = activeSortPointerTarget
+  const pointerId = event?.pointerId ?? activeSortPointerId
+  if (target instanceof HTMLElement && pointerId !== null && pointerId >= 0 && target.hasPointerCapture(pointerId)) {
+    target.releasePointerCapture(pointerId)
+  }
+  activeSortPointerTarget = null
+}
+
+function bindSortPointerListeners() {
+  if (sortPointerListenersBound) return
+  window.addEventListener('pointermove', handleActiveSwitchPointerMove, true)
+  window.addEventListener('pointerup', handleActiveSwitchPointerUp, true)
+  window.addEventListener('pointercancel', handleActiveSwitchPointerCancel, true)
+  sortPointerListenersBound = true
+}
+
+function unbindSortPointerListeners() {
+  if (!sortPointerListenersBound) return
+  window.removeEventListener('pointermove', handleActiveSwitchPointerMove, true)
+  window.removeEventListener('pointerup', handleActiveSwitchPointerUp, true)
+  window.removeEventListener('pointercancel', handleActiveSwitchPointerCancel, true)
+  sortPointerListenersBound = false
+}
+
+function bindSortMouseListeners() {
+  if (sortMouseListenersBound) return
+  window.addEventListener('mousemove', handleActiveSwitchMouseMove, true)
+  window.addEventListener('mouseup', handleActiveSwitchMouseUp, true)
+  sortMouseListenersBound = true
+}
+
+function unbindSortMouseListeners() {
+  if (!sortMouseListenersBound) return
+  window.removeEventListener('mousemove', handleActiveSwitchMouseMove, true)
+  window.removeEventListener('mouseup', handleActiveSwitchMouseUp, true)
+  sortMouseListenersBound = false
+}
+
+function updateActiveSwitchDrag(clientX: number, clientY: number) {
+  if (Math.hypot(clientX - activeSortStartX, clientY - activeSortStartY) < 8) return
+
+  activeSortMoved = true
+  dragOverModuleKey.value = findPointerTargetModuleKey(clientX, clientY)
+}
+
+function commitActiveSwitchDrag(clientX: number, clientY: number) {
+  const sourceKey = draggingModuleKey.value
+  const targetKey = activeSortMoved ? (dragOverModuleKey.value ?? findPointerTargetModuleKey(clientX, clientY)) : null
+  if (sourceKey && targetKey && sourceKey !== targetKey) {
+    store.reorderModule(sourceKey, targetKey)
+  }
+}
+
+function handleSwitchPointerDown(event: PointerEvent, key: string) {
+  if (key === 'basicInfo' || activeSortPointerId !== null || activeSortMouse) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  activeSortPointerId = event.pointerId
+  activeSortStartX = event.clientX
+  activeSortStartY = event.clientY
+  activeSortMoved = false
+  draggingModuleKey.value = key
+  dragOverModuleKey.value = null
+  captureSortPointer(event)
+  bindSortPointerListeners()
+}
+
+function handleActiveSwitchPointerMove(event: PointerEvent) {
+  if (activeSortPointerId !== event.pointerId || !draggingModuleKey.value) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  updateActiveSwitchDrag(event.clientX, event.clientY)
+}
+
+function handleActiveSwitchPointerUp(event: PointerEvent) {
+  if (activeSortPointerId !== event.pointerId || !draggingModuleKey.value) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  commitActiveSwitchDrag(event.clientX, event.clientY)
+  releaseSortPointer(event)
+  clearSwitchDragState()
+}
+
+function handleActiveSwitchPointerCancel(event: PointerEvent) {
+  if (activeSortPointerId !== event.pointerId || !draggingModuleKey.value) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  releaseSortPointer(event)
+  clearSwitchDragState()
+}
+
+function handleSwitchMouseDown(event: MouseEvent, key: string) {
+  if (key === 'basicInfo' || activeSortPointerId !== null || activeSortMouse) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  activeSortMouse = true
+  activeSortStartX = event.clientX
+  activeSortStartY = event.clientY
+  activeSortMoved = false
+  draggingModuleKey.value = key
+  dragOverModuleKey.value = null
+  bindSortMouseListeners()
+}
+
+function handleActiveSwitchMouseMove(event: MouseEvent) {
+  if (!activeSortMouse || !draggingModuleKey.value) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  updateActiveSwitchDrag(event.clientX, event.clientY)
+}
+
+function handleActiveSwitchMouseUp(event: MouseEvent) {
+  if (!activeSortMouse || !draggingModuleKey.value) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  commitActiveSwitchDrag(event.clientX, event.clientY)
+  clearSwitchDragState()
+}
 
 onUnmounted(() => {
-  if (autoSaveTicker) {
-    clearInterval(autoSaveTicker)
-    autoSaveTicker = null
-  }
-  document.removeEventListener('mousedown', handleDocumentPointerDown)
+  clearSwitchDragState()
 })
 </script>
 
 <template>
   <main class="editor-panel">
-    <div class="editor-toolbar">
-      <input v-model="searchValue" class="search-input" placeholder="搜索模块：基本信息 / 教育经历 / 专业技能" />
-      <span
-        class="chip"
-        :class="{ 'chip-pending': isAutoSavePending, 'chip-saving': store.isSaving }"
-        :title="autoSaveChipText"
-        :aria-label="autoSaveChipText"
-        role="status"
-        aria-live="polite"
-      >
-        <span v-if="store.isSaving" class="chip-loading" aria-hidden="true"></span>
-        <svg v-else class="chip-status-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 7v5l3 2" />
-          <circle cx="12" cy="12" r="8" />
-        </svg>
-      </span>
-    </div>
+    <button
+      class="mobile-module-fab"
+      type="button"
+      aria-controls="resume-module-drawer"
+      :aria-expanded="mobileModuleDrawerOpen"
+      @click="mobileModuleDrawerOpen = true"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 6h16" />
+        <path d="M4 12h16" />
+        <path d="M4 18h16" />
+      </svg>
+      模块
+    </button>
 
-    <div ref="moduleMenuRef" class="floating-tools">
-      <div class="floating-tools-stack">
-        <div class="module-switch-anchor">
-          <button
-            class="floating-tool-btn module-tool-btn"
-            type="button"
-            :aria-expanded="moduleMenuOpen"
-            aria-haspopup="menu"
-            aria-label="模块开关"
-            title="模块开关"
-            @click="toggleModuleMenu"
+    <div
+      v-if="mobileModuleDrawerOpen"
+      class="mobile-module-mask"
+      aria-hidden="true"
+      @click="mobileModuleDrawerOpen = false"
+    ></div>
+
+    <div class="editor-workbench">
+      <aside
+        id="resume-module-drawer"
+        class="editor-side-card"
+        :class="{
+          'mobile-module-drawer-open': mobileModuleDrawerOpen,
+          'desktop-module-sidebar-collapsed': props.moduleSidebarCollapsed,
+        }"
+        aria-label="简历模块与快捷操作"
+      >
+        <button
+          class="desktop-module-collapse"
+          type="button"
+          :aria-expanded="!props.moduleSidebarCollapsed"
+          :aria-label="props.moduleSidebarCollapsed ? '展开模块侧栏' : '收起模块侧栏'"
+          :title="props.moduleSidebarCollapsed ? '展开模块侧栏' : '收起模块侧栏'"
+          @click="emit('toggle-module-sidebar')"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path :d="props.moduleSidebarCollapsed ? 'm9 6 6 6-6 6' : 'm15 6-6 6 6 6'" />
+          </svg>
+        </button>
+
+        <button
+          class="mobile-module-close"
+          type="button"
+          aria-label="关闭模块选择"
+          @click="mobileModuleDrawerOpen = false"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12" />
+            <path d="M18 6 6 18" />
+          </svg>
+        </button>
+
+        <section class="completion-card" aria-label="简历完整度">
+          <div class="completion-head">
+            <span>简历完整度</span>
+            <strong>{{ completionPercent }}%</strong>
+          </div>
+          <div class="completion-track" aria-hidden="true">
+            <span :style="{ width: `${completionPercent}%` }"></span>
+          </div>
+          <p>{{ visibleCount }} / {{ store.modules.length }} 个模块已启用</p>
+        </section>
+
+        <ul ref="moduleNavListRef" class="module-nav-list">
+          <li
+            v-for="mod in store.modules"
+            :key="`nav-${mod.key}`"
+            class="module-nav-item"
+            :data-module-key="mod.key"
+            :data-label="mod.label"
+            :class="{
+              active: expanded[mod.key] && mod.visible,
+              muted: !mod.visible,
+              draggable: mod.key !== 'basicInfo',
+              dragging: draggingModuleKey === mod.key,
+              'drag-over': dragOverModuleKey === mod.key,
+            }"
+            :draggable="mod.key !== 'basicInfo'"
+            @dragstart="handleSwitchDragStart($event, mod.key)"
+            @dragover="handleSwitchDragOver($event, mod.key)"
+            @drop.prevent="handleSwitchDrop(mod.key)"
+            @dragend="handleSwitchDragEnd"
           >
-            <svg class="btn-module-switch-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                fill-rule="evenodd"
-                clip-rule="evenodd"
-                d="M10.65 2.45c-.18.06-.31.21-.35.4l-.42 2.28a7.2 7.2 0 0 0-1.32.76l-2.2-.76a.58.58 0 0 0-.58.14L4.22 6.83a.58.58 0 0 0-.14.58l.76 2.2c-.3.42-.55.86-.76 1.32l-2.28.42a.55.55 0 0 0-.45.54v2.22c0 .26.19.49.45.54l2.28.42c.2.46.46.9.76 1.32l-.76 2.2c-.07.2-.02.43.14.58l1.56 1.56c.15.16.38.21.58.14l2.2-.76c.42.3.86.55 1.32.76l.42 2.28c.04.26.28.45.54.45h2.22c.26 0 .5-.19.54-.45l.42-2.28a7.2 7.2 0 0 0 1.32-.76l2.2.76c.2.07.43.02.58-.14l1.56-1.56a.58.58 0 0 0 .14-.58l-.76-2.2c.3-.42.55-.86.76-1.32l2.28-.42a.55.55 0 0 0 .45-.54v-2.22a.55.55 0 0 0-.45-.54l-2.28-.42a7.2 7.2 0 0 0-.76-1.32l.76-2.2a.58.58 0 0 0-.14-.58l-1.56-1.56a.58.58 0 0 0-.58-.14l-2.2.76a7.2 7.2 0 0 0-1.32-.76l-.42-2.28a.55.55 0 0 0-.54-.45h-2.22c-.07 0-.13.01-.19.03ZM12 15.35a3.35 3.35 0 1 0 0-6.7 3.35 3.35 0 0 0 0 6.7Z"
-              />
-            </svg>
-            <span class="floating-badge">{{ visibleCount }}</span>
-          </button>
-          <div v-if="moduleMenuOpen" class="module-switch-popover">
-            <div class="module-switch-popover-header">
-              <p class="module-switch-popover-title">选择展示模块</p>
-              <button
-                class="btn-reset-order-icon"
-                type="button"
-                :disabled="isDefaultOrder"
-                aria-label="恢复默认顺序"
-                title="恢复默认顺序"
-                @click="handleResetOrder"
+            <button
+              type="button"
+              class="module-nav-btn"
+              @click="handleModuleNavClick(mod.key)"
+            >
+              <span class="module-nav-icon" aria-hidden="true">
+                <svg :viewBox="MODULE_ICON_VIEWBOX">
+                  <path v-for="(d, idx) in moduleIconPaths(mod.key)" :key="`nav-${mod.key}-${idx}`" :d="d" />
+                </svg>
+              </span>
+              <span>{{ mod.label }}</span>
+            </button>
+            <div class="module-nav-actions">
+              <span
+                v-if="mod.key !== 'basicInfo'"
+                class="module-drag-chip"
+                title="按住拖拽按钮排序"
+                @pointerdown="handleSwitchPointerDown($event, mod.key)"
+                @mousedown="handleSwitchMouseDown($event, mod.key)"
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M20 11a8 8 0 1 1-2.34-5.66" />
-                  <path d="M20 4v7h-7" />
+                  <path d="M9 5h.01" />
+                  <path d="M15 5h.01" />
+                  <path d="M9 12h.01" />
+                  <path d="M15 12h.01" />
+                  <path d="M9 19h.01" />
+                  <path d="M15 19h.01" />
                 </svg>
-              </button>
+                拖拽
+              </span>
+              <label class="toggle-switch nav-toggle-switch" @click.stop>
+                <input
+                  type="checkbox"
+                  :checked="mod.visible"
+                  :aria-label="`${mod.label}开关`"
+                  @change.stop="store.toggleModule(mod.key)"
+                />
+                <span class="toggle-slider"></span>
+              </label>
             </div>
-            <ul class="module-switch-list">
-              <li
-                v-for="mod in store.modules"
-                :key="`switch-${mod.key}`"
-                class="module-switch-item"
-                :class="{
-                  active: mod.visible,
-                  muted: !mod.visible,
-                  draggable: mod.key !== 'basicInfo',
-                  dragging: draggingModuleKey === mod.key,
-                  'drag-over': dragOverModuleKey === mod.key,
-                }"
-                :draggable="mod.key !== 'basicInfo'"
-                @dragstart="handleSwitchDragStart($event, mod.key)"
-                @dragover="handleSwitchDragOver($event, mod.key)"
-                @drop.prevent="handleSwitchDrop(mod.key)"
-                @dragend="handleSwitchDragEnd"
-              >
-                <div class="module-switch-info">
-                  <span v-if="mod.key !== 'basicInfo'" class="drag-handle" aria-hidden="true" title="拖拽排序">⋮⋮</span>
-                  <span class="module-switch-icon" aria-hidden="true">
-                    <svg class="module-switch-icon-svg" :viewBox="MODULE_ICON_VIEWBOX">
-                      <path v-for="(d, idx) in moduleIconPaths(mod.key)" :key="`switch-${mod.key}-${idx}`" :d="d" />
-                    </svg>
-                  </span>
-                  <span class="module-switch-label">{{ mod.label }}</span>
-                </div>
+          </li>
+        </ul>
 
-                <div class="module-switch-actions">
-                  <div v-if="mod.key !== 'basicInfo' && mod.visible" class="order-actions order-actions-switch">
-                    <button class="order-btn" :disabled="!canMoveUp(mod.key)" @click.stop="moveUp(mod.key)">↑</button>
-                    <button class="order-btn" :disabled="!canMoveDown(mod.key)" @click.stop="moveDown(mod.key)">↓</button>
-                  </div>
-                  <label class="toggle-switch">
-                    <input
-                      type="checkbox"
-                      :checked="mod.visible"
-                      :aria-label="`${mod.label}开关`"
-                      @change="store.toggleModule(mod.key)"
-                    />
-                    <span class="toggle-slider"></span>
-                  </label>
-                </div>
-              </li>
-            </ul>
-          </div>
+        <div class="side-actions">
+          <button
+            class="side-action"
+            type="button"
+            :disabled="isDefaultOrder"
+            @click="handleResetOrder"
+          >
+            恢复排序
+          </button>
+          <button class="side-action primary" type="button" @click="handleAiClick">AI 建议</button>
         </div>
-        <button
-          class="floating-tool-btn ai-tool-btn"
-          type="button"
-          aria-label="AI优化建议"
-          title="AI优化建议"
-          @click="handleAiClick"
-        >
-          <span class="ai-tool-text">AI</span>
-        </button>
-      </div>
-    </div>
+      </aside>
 
-    <div class="stats-row">
-      <div class="stat-card">
-        <p class="stat-label">简历完整度</p>
-        <p class="stat-value">{{ completionPercent }}%</p>
-      </div>
-      <div class="stat-card">
-        <p class="stat-label">模块已启用</p>
-        <p class="stat-value">{{ visibleCount }} / {{ store.modules.length }}</p>
-      </div>
-    </div>
+      <section class="info-editor">
+        <ResumeToolbar v-model:search="searchValue" />
 
-    <section class="info-editor">
-      <div class="info-editor-header">
-        <div class="editor-title-row">
-          <h2 class="editor-title">信息编辑区</h2>
-          <span class="storage-tip-wrap">
-            <button
-              class="storage-tip-trigger"
-              type="button"
-              aria-label="查看简历本地存储提示"
-              aria-describedby="resume-storage-tooltip"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 11v5" />
-                <path d="M12 8h.01" />
-              </svg>
-            </button>
-            <span id="resume-storage-tooltip" class="storage-tooltip" role="tooltip">
-              简历编辑不存储任何个人数据，存储到您本人浏览器缓存里，如果您删除浏览器缓存可能造成数据丢失，建议您编辑完先导出 json 后续可直接导入恢复。
-            </span>
-          </span>
-        </div>
-        <div class="editor-header-actions">
-          <button class="btn-import" type="button" @click="triggerJsonImport">导入 JSON</button>
-          <button class="btn-save" @click="handleSave">保存草稿</button>
-        </div>
-      </div>
-      <p class="editor-subtitle">模块顺序与模块开关一致，点击右侧可展开/收起</p>
-      <input
-        ref="jsonImportInputRef"
-        type="file"
-        accept=".json,application/json"
-        style="display: none"
-        @change="handleImportJson"
-      />
-      <transition name="fade">
-        <p v-if="showSaved" class="save-hint">已保存</p>
-      </transition>
+        <div class="module-sections">
+          <article
+            v-for="mod in filteredModules"
+            :key="mod.key"
+            class="module-block"
+            :class="{ disabled: !mod.visible }"
+          >
+            <header class="module-head" @click="toggleExpand(mod.key)">
+              <div class="module-head-left">
+                <span class="module-head-icon" aria-hidden="true">
+                  <svg class="module-head-icon-svg" :viewBox="MODULE_ICON_VIEWBOX">
+                    <path v-for="(d, idx) in moduleIconPaths(mod.key)" :key="`${mod.key}-${idx}`" :d="d" />
+                  </svg>
+                </span>
+                <span class="module-head-title">{{ mod.label }}</span>
+              </div>
+              <div class="module-head-right">
+                <span v-if="!mod.visible" class="disabled-tag">已关闭</span>
+                <span class="expand-text">{{ expanded[mod.key] && mod.visible ? '收起' : '展开' }}</span>
+              </div>
+            </header>
 
-      <div class="module-sections">
-        <article
-          v-for="mod in filteredModules"
-          :key="mod.key"
-          class="module-block"
-          :class="{ disabled: !mod.visible }"
-        >
-	          <header class="module-head" @click="toggleExpand(mod.key)">
-	            <div class="module-head-left">
-	              <span class="module-head-icon" aria-hidden="true">
-	                <svg class="module-head-icon-svg" :viewBox="MODULE_ICON_VIEWBOX">
-	                  <path v-for="(d, idx) in moduleIconPaths(mod.key)" :key="`${mod.key}-${idx}`" :d="d" />
-	                </svg>
-	              </span>
-	              <span class="module-head-title">{{ mod.label }}</span>
-	            </div>
-            <div class="module-head-right">
-              <span v-if="!mod.visible" class="disabled-tag">已关闭</span>
-              <span class="expand-text">{{ expanded[mod.key] && mod.visible ? '收起' : '展开' }} ▸</span>
+            <div v-if="expanded[mod.key] && mod.visible" class="module-body">
+              <component :is="editorMap[mod.key]" />
             </div>
-          </header>
+          </article>
 
-          <div v-if="expanded[mod.key] && mod.visible" class="module-body">
-            <component :is="editorMap[mod.key]" />
-          </div>
-        </article>
-
-        <div v-if="filteredModules.length === 0" class="empty-result">没有匹配的模块</div>
-      </div>
-    </section>
+          <div v-if="filteredModules.length === 0" class="empty-result">没有匹配的模块</div>
+        </div>
+      </section>
+    </div>
 
     <AiOptimizePanel
       :open="showAiPanel"

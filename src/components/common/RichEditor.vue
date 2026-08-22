@@ -15,6 +15,7 @@ const emit = defineEmits<{
 const editorRef = ref<HTMLDivElement | null>(null)
 const isFocused = ref(false)
 const showPlaceholder = ref(!props.modelValue)
+const defaultTextColor = ref('')
 
 // Sync incoming model value → DOM (only when not focused to avoid cursor jumps)
 watch(() => props.modelValue, (val) => {
@@ -26,6 +27,10 @@ watch(() => props.modelValue, (val) => {
 })
 
 onMounted(() => {
+  defaultTextColor.value = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue('--resume-paper-text')
+    .trim()
   if (editorRef.value) {
     editorRef.value.innerHTML = props.modelValue || ''
     showPlaceholder.value = !props.modelValue
@@ -140,7 +145,7 @@ function isActive(cmd: string): boolean {
         <option value="18px">18</option>
         <option value="20px">20</option>
       </select>
-      <input type="color" class="tool-color" @change="setColor" title="字体颜色" value="#333333" />
+      <input type="color" class="tool-color" :value="defaultTextColor" @change="setColor" title="字体颜色" />
       <div class="tool-divider"></div>
       <button type="button" class="tool-btn" @mousedown.prevent="execCmd('insertUnorderedList')" title="无序列表">
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none">

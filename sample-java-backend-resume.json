@@ -1,0 +1,143 @@
+{
+  "author": "jf",
+  "modules": [
+    {
+      "key": "basicInfo",
+      "label": "基本信息",
+      "icon": "👤",
+      "visible": true
+    },
+    {
+      "key": "education",
+      "label": "教育经历",
+      "icon": "🎓",
+      "visible": true
+    },
+    {
+      "key": "skills",
+      "label": "专业技能",
+      "icon": "⚡",
+      "visible": true
+    },
+    {
+      "key": "workExperience",
+      "label": "工作经历",
+      "icon": "💼",
+      "visible": true
+    },
+    {
+      "key": "projectExperience",
+      "label": "项目经历",
+      "icon": "📁",
+      "visible": true
+    },
+    {
+      "key": "awards",
+      "label": "荣誉奖项",
+      "icon": "🏆",
+      "visible": true
+    },
+    {
+      "key": "selfIntro",
+      "label": "个人简介",
+      "icon": "📝",
+      "visible": true
+    }
+  ],
+  "selectedTemplateKey": "blue-split-pro",
+  "basicInfo": {
+    "name": "林泽宇",
+    "phone": "13800001234",
+    "email": "lin.zeyu@example.com",
+    "age": "27岁",
+    "gender": "男",
+    "location": "上海",
+    "jobTitle": "Java后端工程师",
+    "educationLevel": "本科",
+    "avatar": "",
+    "workYears": "5年",
+    "currentStatus": "在职-考虑机会",
+    "expectedLocation": "上海 / 杭州",
+    "expectedSalary": "25-35K",
+    "website": "",
+    "wechat": "linzeyu_java",
+    "currentCity": "上海",
+    "github": "https://github.com/example-java-engineer",
+    "blog": "https://example.com/java-notes"
+  },
+  "educationList": [
+    {
+      "id": "education_001",
+      "school": "华东理工大学",
+      "college": "信息科学与工程学院",
+      "major": "计算机科学与技术",
+      "degree": "本科",
+      "startDate": "2017-09",
+      "endDate": "2021-06",
+      "gpa": "3.6 / 4.0",
+      "description": "<p>主修数据结构、操作系统、计算机网络、数据库原理和软件工程；专业排名前 20%，具备扎实的计算机基础。</p>",
+      "type": "全日制",
+      "location": "上海"
+    }
+  ],
+  "skills": "<ul><li><strong>Java：</strong>熟悉集合、并发编程、JVM 内存模型及常见性能分析方法，具备良好的编码规范与问题定位能力。</li><li><strong>后端框架：</strong>熟练使用 Spring Boot、Spring Cloud、MyBatis-Plus，能够完成微服务拆分、接口治理与事务设计。</li><li><strong>数据与缓存：</strong>熟悉 MySQL 索引、事务和 SQL 优化，掌握 Redis 缓存、分布式锁、热点数据保护与一致性方案。</li><li><strong>消息与搜索：</strong>具备 RocketMQ、Kafka、Elasticsearch 实践经验，能够处理消息幂等、失败重试和最终一致性问题。</li><li><strong>工程能力：</strong>熟悉 Docker、Linux、Maven、Git、Nginx、Prometheus，了解 Kubernetes、CI/CD 与可观测性体系。</li></ul>",
+  "workList": [
+    {
+      "id": "work_001",
+      "company": "上海云程科技有限公司",
+      "department": "交易平台研发部",
+      "position": "高级Java开发工程师",
+      "startDate": "2023-07",
+      "endDate": "",
+      "location": "上海",
+      "description": "<ul><li>负责订单、库存、营销和支付核心链路的需求分析与服务端开发，参与领域拆分、接口设计和技术方案评审。</li><li>基于 Redis Lua 与数据库唯一约束重构优惠券核销链路，将高峰期重复核销问题降为 0，接口 P99 从 620ms 降至 180ms。</li><li>建设 RocketMQ 消费幂等、重试和死信补偿机制，降低订单状态不一致问题，异常工单量下降约 70%。</li><li>推动慢 SQL 治理与索引优化，核心订单列表查询平均耗时由 1.8s 降至 260ms，并补充关键链路监控告警。</li></ul>"
+    },
+    {
+      "id": "work_002",
+      "company": "杭州星河网络有限公司",
+      "department": "企业应用事业部",
+      "position": "Java开发工程师",
+      "startDate": "2021-07",
+      "endDate": "2023-06",
+      "location": "杭州",
+      "description": "<ul><li>参与企业 SaaS 平台客户、权限、审批和报表模块开发，独立负责多个需求从设计到上线的完整交付。</li><li>使用 Spring Security 与 RBAC 模型重构数据权限校验，将分散在控制层的权限逻辑收敛为统一组件。</li><li>引入本地缓存与 Redis 二级缓存优化组织树查询，高并发场景下数据库访问量降低约 65%。</li><li>维护自动化发布流程与应用运行手册，协助处理线上故障并持续沉淀排查清单。</li></ul>"
+    }
+  ],
+  "projectList": [
+    {
+      "id": "project_001",
+      "name": "高并发交易履约平台",
+      "role": "核心开发",
+      "startDate": "2024-03",
+      "endDate": "",
+      "link": "",
+      "introduction": "<p>面向多渠道电商订单的统一交易与履约平台，覆盖下单、库存预占、优惠计算、支付回调、拆单和售后等流程，日均处理订单 80 万笔。</p>",
+      "mainWork": "<ul><li>设计订单状态机和幂等键规则，统一处理客户端重试、支付重复回调及消息重复消费。</li><li>采用 Seata AT 与本地消息表相结合的方案，按业务一致性要求拆分强一致与最终一致链路。</li><li>针对热点商品建立分段库存与异步合并机制，活动峰值吞吐由 1,200 TPS 提升至 3,500 TPS。</li><li>通过 TraceId 串联网关、服务和消息日志，配合 Prometheus 与 Grafana 建立关键指标和分级告警。</li></ul>"
+    },
+    {
+      "id": "project_002",
+      "name": "企业级统一权限中心",
+      "role": "后端负责人",
+      "startDate": "2022-05",
+      "endDate": "2023-02",
+      "link": "",
+      "introduction": "<p>为多个 SaaS 产品提供统一认证、菜单权限、数据权限和审计能力，支持多租户及组织层级授权。</p>",
+      "mainWork": "<ul><li>抽象用户、角色、资源、数据范围和租户模型，完成权限中心接口与数据库结构设计。</li><li>使用 JWT 短令牌与 Redis 会话版本实现主动失效，降低长期令牌泄露风险。</li><li>基于策略模式实现本人、部门、部门及下级、自定义范围等数据权限组合，减少业务系统重复开发。</li><li>完成存量系统渐进式接入，统一 6 个应用的登录与授权流程，平均接入周期缩短约 50%。</li></ul>"
+    }
+  ],
+  "awardList": [
+    {
+      "id": "award_001",
+      "name": "年度技术突破奖",
+      "date": "2025-01",
+      "description": "<p>因交易链路性能优化与稳定性治理获得部门年度技术奖项。</p>"
+    },
+    {
+      "id": "award_002",
+      "name": "阿里云云原生应用工程师认证",
+      "date": "2023-11",
+      "description": "<p>完成容器、微服务治理、可观测性及云原生应用交付相关认证。</p>"
+    }
+  ],
+  "selfIntro": "<p>5 年 Java 后端开发经验，持续参与交易、权限和企业 SaaS 系统建设，能够独立完成需求分析、技术方案、核心编码、上线与故障复盘。重视数据一致性、系统可观测性和工程质量，擅长从业务目标出发解决高并发、性能和稳定性问题，并具备良好的跨团队协作能力。</p>"
+}

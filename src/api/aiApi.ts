@@ -1,5 +1,6 @@
 // author: jf
 import { API_BASE_PATH } from './apiBase'
+import { fetchWithAuth } from '@/services/authService'
 
 export interface ChatRequestPayload {
   message: string
@@ -22,7 +23,7 @@ export async function postAiChat(
   requestBody: ChatRequestPayload,
   signal?: AbortSignal
 ): Promise<Response> {
-  return fetch(getAiChatEndpoint(), {
+  return fetchWithAuth(getAiChatEndpoint(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -37,7 +38,7 @@ export async function postAiChatStream(
   requestBody: ChatRequestPayload,
   signal?: AbortSignal
 ): Promise<Response> {
-  return fetch(getAiChatStreamEndpoint(), {
+  return fetchWithAuth(getAiChatStreamEndpoint(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

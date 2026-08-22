@@ -51,7 +51,7 @@ def _prepare_request_payload(
         return payload
 
     fetch_session_started_at = time.monotonic()
-    stored_session = session_repository.get(session_id)
+    stored_session = session_repository.get(session_id, request.user_id)
     fetch_session_elapsed_ms = int((time.monotonic() - fetch_session_started_at) * 1000)
     _LOGGER.warning(
         "[AI面试][流式] session repository get done sessionId=%s elapsedMs=%s found=%s",

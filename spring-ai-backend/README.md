@@ -20,6 +20,7 @@ Spring Boot 3 + Spring AI 后端服务，提供聊天、流式输出、Realtime 
 - Maven `3.9+`
 - Docker Desktop / Docker Compose
 - 可用的 OpenAI 或 OpenAI-compatible API Key；如启用默认实时语音链路，还需要 DashScope API Key
+- 已开启 SMTP 服务并生成授权码的 QQ 邮箱，用于发送注册验证码
 
 ### 1. 准备 `.env`
 
@@ -35,7 +36,12 @@ PGVECTOR_DATASOURCE_USERNAME=pgvector
 PGVECTOR_DATASOURCE_PASSWORD=pgvector
 SERVER_PORT=8999
 APP_CORS_ALLOWED_ORIGINS=http://localhost:5173
+MAIL_USERNAME=your_qq_number@qq.com
+MAIL_AUTHORIZATION_CODE=your_qq_smtp_authorization_code
+APP_AUTH_EMAIL_CODE_SECRET=replace_with_a_separate_random_secret
 ```
+
+`MAIL_AUTHORIZATION_CODE` 必须填写 QQ 邮箱“设置 > 账号 > POP3/IMAP/SMTP/Exchange/CardDAV/CalDAV 服务”中生成的 SMTP 授权码，不能填写 QQ 登录密码。真实邮箱与授权码只写入本地 `spring-ai-backend/.env`，不要提交到仓库。
 
 ### 2. 启动数据库
 
@@ -52,6 +58,7 @@ docker compose up -d
 ```bash
 docker exec -i spring-ai-mysql mysql -uroot -proot < ../sql/mysql_database_schema.sql
 docker exec -i spring-ai-mysql mysql -uroot -proot resume-builder < ../sql/interview_schema.sql
+docker exec -i spring-ai-mysql mysql -uroot -proot resume-builder < ../sql/auth_user_schema.sql
 docker exec -i spring-ai-pgvector psql -v ON_ERROR_STOP=1 -U pgvector -d postgres < ../sql/create_pgvector_resume_builder_database.sql
 docker exec -i spring-ai-pgvector psql -U pgvector -d resume-builder < ../sql/pgvector_rag_schema.sql
 ```
@@ -89,6 +96,9 @@ PGVECTOR_DATASOURCE_USERNAME=pgvector
 PGVECTOR_DATASOURCE_PASSWORD=pgvector
 SERVER_PORT=8999
 APP_CORS_ALLOWED_ORIGINS=http://localhost:5173
+MAIL_USERNAME=your_qq_number@qq.com
+MAIL_AUTHORIZATION_CODE=your_qq_smtp_authorization_code
+APP_AUTH_EMAIL_CODE_SECRET=replace_with_a_separate_random_secret
 ```
 
 ### 可选分路配置
@@ -98,6 +108,7 @@ APP_CORS_ALLOWED_ORIGINS=http://localhost:5173
 - OpenAI Realtime：当 `REALTIME_ASR_PROVIDER=openai` 时，使用 `OPENAI_REALTIME_BASE_URL`、`OPENAI_REALTIME_API_KEY`、`OPENAI_REALTIME_CLIENT_SECRETS_PATH`、`OPENAI_REALTIME_CALLS_PATH`、`OPENAI_REALTIME_TRANSCRIPTION_MODEL`、`OPENAI_REALTIME_LANGUAGE`、`OPENAI_REALTIME_TIMEOUT_SECONDS`
 - Embedding：`EMBEDDING_PROVIDER`、`EMBEDDING_DIMENSIONS`、`OPENAI_EMBEDDING_*`、`OLLAMA_EMBEDDING_*`
 - Vision OCR：`OPENAI_VISION_BASE_URL`、`OPENAI_VISION_API_KEY`、`OPENAI_VISION_MODEL`、`OPENAI_VISION_DETAIL`
+- 邮箱验证：QQ SMTP 固定使用 `smtp.qq.com:465` SSL，注册和密码重置共用发送配置，需配置 `MAIL_USERNAME`、`MAIL_AUTHORIZATION_CODE` 和独立的 `APP_AUTH_EMAIL_CODE_SECRET`
 
 说明：
 
@@ -116,7 +127,7 @@ APP_CORS_ALLOWED_ORIGINS=http://localhost:5173
 
 ## API 摘要
 
-基础路径：`/api/ai`
+AI 能力基础路径：`/api/ai`
 
 - `POST /chat`
 - `POST /chat/stream`
@@ -129,9 +140,18 @@ APP_CORS_ALLOWED_ORIGINS=http://localhost:5173
 - `POST /rag/query`
 - `POST /rag/upload`
 
+认证基础路径：`/api/auth`
+
+- `POST /email-code`：向注册邮箱发送 6 位验证码
+- `POST /register`：使用邮箱、验证码和密码注册
+- `POST /login`：使用注册邮箱或保留的演示账号登录
+- `POST /password-reset/email-code`：向已注册邮箱发送密码重置验证码
+- `POST /password-reset`：使用邮箱验证码设置新密码
+
 ## 建表脚本
 
 - `sql/interview_schema.sql`
+- `sql/auth_user_schema.sql`
 - `sql/pgvector_rag_schema.sql`
 - `sql/spring_ai_rag_table_cleanup.sql`
 

@@ -13,6 +13,23 @@ spring:
       - org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration
   application:
     name: spring-ai-backend
+  mail:
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_AUTHORIZATION_CODE:}
+    protocol: smtp
+    default-encoding: UTF-8
+    test-connection: false
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          connectiontimeout: ${MAIL_CONNECTION_TIMEOUT_MILLIS:10000}
+          timeout: ${MAIL_TIMEOUT_MILLIS:10000}
+          writetimeout: ${MAIL_WRITE_TIMEOUT_MILLIS:10000}
   ai:
     openai:
       base-url: ${OPENAI_BASE_URL:${OPENAI_CHAT_BASE_URL:https://api.openai.com}}
@@ -50,7 +67,15 @@ mybatis-plus:
   mapper-locations: classpath*:/mapper/*.xml
 
 app:
-  cors-allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  cors-allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+  auth:
+    token-secret: ${APP_AUTH_TOKEN_SECRET:resume-builder-local-demo-auth-secret}
+    token-ttl-seconds: ${APP_AUTH_TOKEN_TTL_SECONDS:43200}
+    email-verification:
+      code-secret: ${APP_AUTH_EMAIL_CODE_SECRET:}
+      cooldown-seconds: ${APP_AUTH_EMAIL_CODE_COOLDOWN_SECONDS:60}
+      expiry-seconds: ${APP_AUTH_EMAIL_CODE_EXPIRY_SECONDS:600}
+      max-failed-attempts: ${APP_AUTH_EMAIL_CODE_MAX_FAILED_ATTEMPTS:5}
   realtime-asr:
     provider: ${REALTIME_ASR_PROVIDER:dashscope}
     dashscope:

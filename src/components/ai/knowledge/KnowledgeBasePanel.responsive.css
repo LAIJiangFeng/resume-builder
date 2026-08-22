@@ -1,0 +1,277 @@
+/* author: jf */
+@media (max-width: 1080px) {
+  .workspace-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compact-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .metric-list {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 860px) {
+  .header-main,
+  .header-top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .header-summary {
+    width: 100%;
+  }
+
+  .workspace-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-facts {
+    justify-content: flex-start;
+  }
+
+  .upload-facts .fact-row,
+  .upload-facts .fact-row:first-child {
+    flex: 1 1 calc(50% - 8px);
+  }
+}
+
+@media (max-width: 720px) {
+  .knowledge-panel {
+    overflow-x: hidden;
+    background: var(--app-background);
+  }
+
+  .panel-shell {
+    gap: 12px;
+    padding: 8px 12px;
+  }
+
+  .page-header {
+    min-height: 0;
+  }
+
+  .header-signals,
+  .header-summary {
+    display: none;
+  }
+
+  .brand-mark {
+    border-color: var(--border-color);
+    background: var(--surface-base);
+  }
+
+  .workspace-layout {
+    gap: 12px;
+  }
+
+  .main-card,
+  .guidance-card {
+    padding: 14px;
+    border-radius: 22px;
+  }
+
+  .card-head {
+    display: none;
+  }
+
+  .dropzone {
+    flex: 0 0 auto;
+    min-height: auto;
+    gap: 8px;
+    justify-content: flex-start;
+    padding: 14px 12px;
+    border-radius: 18px;
+  }
+
+  .dropzone-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 14px;
+  }
+
+  .upload-facts {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .upload-facts .fact-row,
+  .upload-facts .fact-row:first-child {
+    flex: none;
+    min-width: 0;
+  }
+
+  .upload-facts .fact-row:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .fact-row {
+    gap: 8px;
+    min-height: 54px;
+    padding: 8px;
+    border-radius: 14px;
+  }
+
+  .fact-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 11px;
+  }
+
+  .fact-row dt {
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
+  .fact-row dd {
+    margin-top: 3px;
+    font-size: 11px;
+    line-height: 1.25;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .panel-toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .primary-btn {
+    grid-column: 1 / -1;
+  }
+
+  .primary-btn,
+  .ghost-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .compact-summary {
+    display: none;
+  }
+
+  .compact-bar {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .metric-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .metric-item {
+    flex-direction: column;
+    gap: 4px;
+    align-items: center;
+    justify-content: center;
+    min-height: 70px;
+    text-align: center;
+  }
+
+  .metric-icon {
+    display: none;
+  }
+
+  .result-block {
+    border-color: var(--border-color);
+    background: var(--surface-base);
+    color: var(--kb-text);
+  }
+
+  .result-head h3 {
+    color: var(--kb-text);
+  }
+
+  .result-item,
+  .results-empty {
+    border-color: var(--border-soft);
+    background: var(--surface-soft);
+  }
+
+  .upload-progress-card {
+    border-radius: 16px;
+  }
+
+  .result-item.result-uploading {
+    border-color: var(--border-progress);
+    background: var(--surface-progress);
+  }
+
+  .result-item.result-success {
+    border-color: var(--border-success);
+    background: var(--kb-success-soft);
+  }
+
+  .result-item.result-failed {
+    border-color: var(--border-danger);
+    background: var(--kb-error-soft);
+  }
+
+  .result-item.result-cancelled {
+    border-color: var(--border-neutral);
+    background: var(--surface-neutral);
+  }
+
+  .file-name,
+  .results-empty h3 {
+    color: var(--kb-text);
+  }
+
+  .file-meta,
+  .file-submeta span,
+  .results-empty p {
+    color: var(--kb-muted);
+  }
+}
+
+@media (max-width: 520px) {
+  .panel-shell {
+    padding-inline: 10px;
+  }
+
+  .dropzone h3 {
+    font-size: 15px;
+    line-height: 1.2;
+  }
+
+  .dropzone p,
+  .guidance-head p,
+  .results-empty p,
+  .file-meta,
+  .file-error,
+  .guidance-flow li {
+    font-size: 12px;
+  }
+
+  .metric-item strong {
+    font-size: 18px;
+  }
+
+  .progress-top {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .progress-percent {
+    font-size: 16px;
+  }
+
+  .result-heading {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .upload-facts .fact-row,
+  .upload-facts .fact-row:first-child {
+    flex-basis: auto;
+  }
+}

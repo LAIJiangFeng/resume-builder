@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- author: jf -->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.resumebuilder.springaibackend.mapper.AuthUserMapper">
+
+    <select id="selectByUsername" resultType="com.resumebuilder.springaibackend.entity.AuthUserEntity">
+        SELECT
+            user_id AS userId,
+            username,
+            password_hash AS passwordHash,
+            display_name AS displayName,
+            role,
+            JSON_UNQUOTE(JSON_EXTRACT(permissions_json, '$')) AS permissionsJson,
+            enabled
+        FROM auth_users
+        WHERE username = #{username}
+        LIMIT 1
+    </select>
+
+    <select id="selectEnabledByUsername" resultType="com.resumebuilder.springaibackend.entity.AuthUserEntity">
+        SELECT
+            user_id AS userId,
+            username,
+            password_hash AS passwordHash,
+            display_name AS displayName,
+            role,
+            JSON_UNQUOTE(JSON_EXTRACT(permissions_json, '$')) AS permissionsJson,
+            enabled
+        FROM auth_users
+        WHERE username = #{username}
+          AND enabled = 1
+        LIMIT 1
+    </select>
+
+    <insert id="insertUser" parameterType="com.resumebuilder.springaibackend.entity.AuthUserEntity">
+        INSERT INTO auth_users (
+            user_id,
+            username,
+            password_hash,
+            display_name,
+            role,
+            permissions_json,
+            enabled
+        ) VALUES (
+            #{userId},
+            #{username},
+            #{passwordHash},
+            #{displayName},
+            #{role},
+            #{permissionsJson},
+            #{enabled}
+        )
+    </insert>
+
+    <update id="updatePasswordHash">
+        UPDATE auth_users
+        SET password_hash = #{passwordHash},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = #{userId}
+          AND enabled = 1
+    </update>
+</mapper>

@@ -1,0 +1,8 @@
+# author: jf
+interface:
+  display_name: "Modern Web UI Designer"
+  short_description: "现代 Web UI 调整与重设计提示词"
+  default_prompt: "Use $modern-web-ui-designer to redesign or adjust the current web UI page."
+
+policy:
+  allow_implicit_invocation: true

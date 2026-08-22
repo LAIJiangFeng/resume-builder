@@ -1,42 +1,135 @@
 <!-- author: jf -->
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { uploadKnowledgeAssets, type RagUploadFileResult, type RagUploadResponse } from '@/api/ragApi'
+import { computed, onUnmounted, ref, watch } from 'vue'
+import {
+  Blocks,
+  CircleX,
+  CloudUpload,
+  DatabaseZap,
+  FileText,
+  FileUp,
+  Image as ImageIcon,
+  ListChecks,
+  Play,
+  ScanText,
+  Server,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-vue-next'
+import {
+  uploadKnowledgeAssetsStream,
+  type RagUploadFileResult,
+  type RagUploadProgressEvent,
+  type RagUploadResponse,
+} from '@/api/ragApi'
 
-type LocalUploadItem = RagUploadFileResult & {
+type LocalUploadStatus = 'pending' | 'queued' | 'uploading' | 'success' | 'failed' | 'cancelled'
+
+type LocalUploadItem = Omit<RagUploadFileResult, 'status'> & {
+  status: LocalUploadStatus
   fileSize: number
+  order: number
+  stage?: string
+  stageProgress: number
 }
 
 type UploadPhase = 'idle' | 'ready' | 'uploading' | 'completed' | 'error'
 
 type CompactMetric = {
+  icon: 'files' | 'checks' | 'chunks'
   label: string
   value: string
 }
 
 type GuidanceFact = {
+  icon: 'format' | 'limit' | 'target' | 'type'
   label: string
   value: string
 }
 
 const ACCEPT = '.pdf,.txt,.md,.docx,.png,.jpg,.jpeg,.webp'
+const UPLOAD_STAGE_PROGRESS: Array<{ keyword: string; progress: number }> = [
+  { keyword: '排队', progress: 0 },
+  { keyword: '开始', progress: 0.08 },
+  { keyword: '读取', progress: 0.16 },
+  { keyword: '校验', progress: 0.25 },
+  { keyword: '解析', progress: 0.38 },
+  { keyword: '规范化', progress: 0.5 },
+  { keyword: '逻辑文档拆分', progress: 0.6 },
+  { keyword: '拆分', progress: 0.6 },
+  { keyword: '切块', progress: 0.72 },
+  { keyword: 'Embedding', progress: 0.84 },
+  { keyword: '入库', progress: 0.94 },
+  { keyword: '完成', progress: 1 },
+]
 const selectedFiles = ref<File[]>([])
 const uploadItems = ref<LocalUploadItem[]>([])
 const uploadSummary = ref<RagUploadResponse | null>(null)
 const errorMessage = ref('')
 const isUploading = ref(false)
 const isDragOver = ref(false)
+const displayedUploadProgressPercent = ref(0)
+const backendUploadProgressPercent = ref<number | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 let abortController: AbortController | null = null
+let progressAnimationTimer: number | null = null
 
 const hasFiles = computed(() => selectedFiles.value.length > 0)
 const hasUploadItems = computed(() => uploadItems.value.length > 0)
 const totalFiles = computed(() => uploadSummary.value?.totalFiles ?? selectedFiles.value.length)
-const succeededFiles = computed(() => uploadSummary.value?.succeededFiles ?? 0)
-const failedFiles = computed(() => uploadSummary.value?.failedFiles ?? 0)
-const insertedChunks = computed(() => uploadSummary.value?.inserted ?? 0)
+const succeededFiles = computed(() => uploadSummary.value?.succeededFiles ?? countUploadItems(['success']))
+const failedFiles = computed(() => uploadSummary.value?.failedFiles ?? countUploadItems(['failed']))
+const cancelledFiles = computed(() => countUploadItems(['cancelled']))
+const insertedChunks = computed(
+  () => uploadSummary.value?.inserted ?? uploadItems.value.reduce((sum, item) => sum + item.insertedCount, 0)
+)
 const totalSelectedSize = computed(() => selectedFiles.value.reduce((sum, file) => sum + file.size, 0))
 const totalSelectedSizeLabel = computed(() => formatFileSize(totalSelectedSize.value))
+const processedFiles = computed(() => countUploadItems(['success', 'failed']))
+const activeUploadIndex = computed(() => uploadItems.value.findIndex((item) => item.status === 'uploading'))
+const activeUploadItem = computed(() => {
+  if (activeUploadIndex.value < 0) return null
+  return uploadItems.value[activeUploadIndex.value] ?? null
+})
+const uploadProgressPercent = computed(() => {
+  const total = totalFiles.value
+  if (total <= 0) return 0
+  if (uploadPhase.value === 'completed' && cancelledFiles.value === 0) return 100
+  if (uploadPhase.value === 'ready' || uploadPhase.value === 'idle') return 0
+  if (backendUploadProgressPercent.value !== null) {
+    const percent = backendUploadProgressPercent.value
+    if (isUploading.value) return Math.min(99, Math.max(4, percent))
+    return percent
+  }
+  const weightedProgress = uploadItems.value.reduce((sum, item) => sum + resolveItemProgress(item), 0)
+  const percent = Math.round((weightedProgress / total) * 100)
+  if (isUploading.value) return Math.min(99, Math.max(4, percent))
+  return percent
+})
+const uploadProgressText = computed(() => {
+  if (isUploading.value && activeUploadItem.value) {
+    const stageText = activeUploadItem.value.stage ? `（${activeUploadItem.value.stage}）` : ''
+    return `正在处理第 ${activeUploadItem.value.order}/${totalFiles.value} 个：${activeUploadItem.value.fileName}${stageText}`
+  }
+  if (isUploading.value) {
+    return `正在处理文件，请稍等，已完成 ${processedFiles.value}/${totalFiles.value} 个`
+  }
+  if (uploadPhase.value === 'completed') {
+    return failedFiles.value > 0
+      ? `已处理 ${processedFiles.value}/${totalFiles.value} 个文件，${failedFiles.value} 个失败`
+      : `已完成 ${totalFiles.value} 个文件`
+  }
+  if (uploadPhase.value === 'error') {
+    if (cancelledFiles.value > 0) return `已取消，已处理 ${processedFiles.value}/${totalFiles.value} 个文件`
+    return `上传中断，已处理 ${processedFiles.value}/${totalFiles.value} 个文件`
+  }
+  if (uploadPhase.value === 'ready') return `等待开始，共 ${totalFiles.value} 个文件`
+  return '等待选择文件'
+})
+const progressAssistText = computed(() => {
+  const cancelledText = cancelledFiles.value > 0 ? `，取消 ${cancelledFiles.value}` : ''
+  return `成功 ${succeededFiles.value}，失败 ${failedFiles.value}${cancelledText}，Chunk ${insertedChunks.value}`
+})
 
 const uploadPhase = computed<UploadPhase>(() => {
   if (isUploading.value) return 'uploading'
@@ -46,34 +139,12 @@ const uploadPhase = computed<UploadPhase>(() => {
   return 'idle'
 })
 
-const phaseLabel = computed(() => {
-  switch (uploadPhase.value) {
-    case 'ready':
-      return '待上传'
-    case 'uploading':
-      return '处理中'
-    case 'completed':
-      return '已完成'
-    case 'error':
-      return '失败'
-    default:
-      return '未开始'
-  }
+watch(uploadProgressPercent, (targetPercent) => {
+  animateDisplayedProgress(targetPercent)
 })
 
-const headerText = computed(() => {
-  switch (uploadPhase.value) {
-    case 'ready':
-      return `已选择 ${totalFiles.value} 个文件，确认后即可开始本批次入库。`
-    case 'uploading':
-      return `正在处理 ${totalFiles.value} 个文件，结果会直接在当前工作区更新。`
-    case 'completed':
-      return `本批次处理完成，成功 ${succeededFiles.value} 个，失败 ${failedFiles.value} 个。`
-    case 'error':
-      return errorMessage.value || '本次上传未完成，请重新选择文件后继续。'
-    default:
-      return '统一处理文档上传、图片 OCR 和分块入库。'
-  }
+onUnmounted(() => {
+  stopProgressAnimation()
 })
 
 const compactSummary = computed(() => {
@@ -81,20 +152,20 @@ const compactSummary = computed(() => {
     case 'ready':
       return `已选 ${totalFiles.value} 个文件，共 ${totalSelectedSizeLabel.value}`
     case 'uploading':
-      return `正在处理 ${totalFiles.value} 个文件`
+      return uploadProgressText.value
     case 'completed':
       return `本批次已完成，成功 ${succeededFiles.value}，失败 ${failedFiles.value}`
     case 'error':
-      return '上传未完成，请处理错误后重新选择文件'
+      return errorMessage.value || '上传未完成，请查看当前批次状态'
     default:
       return '文档与图片可混合上传，结果会在下方直接更新'
   }
 })
 
 const compactMetrics = computed<CompactMetric[]>(() => [
-  { label: '文件', value: String(totalFiles.value) },
-  { label: '成功/失败', value: `${succeededFiles.value}/${failedFiles.value}` },
-  { label: 'Chunk', value: String(insertedChunks.value) },
+  { icon: 'files', label: '文件', value: String(totalFiles.value) },
+  { icon: 'checks', label: '成功/失败', value: `${succeededFiles.value}/${failedFiles.value}` },
+  { icon: 'chunks', label: 'Chunk', value: String(insertedChunks.value) },
 ])
 
 const resultSectionTitle = computed(() => {
@@ -104,7 +175,7 @@ const resultSectionTitle = computed(() => {
     case 'uploading':
       return '当前进度'
     case 'error':
-      return '错误与结果'
+      return '错误与进度'
     default:
       return '当前批次'
   }
@@ -123,15 +194,10 @@ const emptyStateText = computed(() => {
 })
 
 const guidanceFacts: GuidanceFact[] = [
-  { label: '支持格式', value: 'PDF / TXT / MD / DOCX / PNG / JPG / JPEG / WEBP' },
-  { label: '单文件限制', value: '10 MB' },
-  { label: '写入目标', value: 'pgvector' },
-  { label: '支持类型', value: '文档 / 图片' },
-]
-
-const ingestNotes = [
-  '文档：直接解析文本后分块入库',
-  '图片：先 OCR，再进入同一分块链路',
+  { icon: 'format', label: '支持格式', value: 'PDF / TXT / MD / DOCX / PNG / JPG / JPEG / WEBP' },
+  { icon: 'limit', label: '单文件限制', value: '10 MB' },
+  { icon: 'target', label: '写入目标', value: 'pgvector' },
+  { icon: 'type', label: '支持类型', value: '文档 / 图片' },
 ]
 
 function openFilePicker() {
@@ -178,27 +244,41 @@ function clearFiles() {
 async function handleUpload() {
   if (!hasFiles.value || isUploading.value) return
 
+  const filesToUpload = [...selectedFiles.value]
   isUploading.value = true
   resetUploadFeedback()
   abortController = new AbortController()
-  uploadItems.value = selectedFiles.value.map((file) => createPendingItem(file, 'uploading'))
+  const signal = abortController.signal
+  uploadItems.value = filesToUpload.map((file, index) => createPendingItem(file, 'queued', index + 1))
 
   try {
-    const response = await uploadKnowledgeAssets(selectedFiles.value, abortController.signal)
-    uploadSummary.value = response
-    uploadItems.value = response.files.map((item) => ({
-      ...item,
-      fileSize: selectedFiles.value.find((file) => file.name === item.fileName)?.size ?? 0,
-    }))
+    await uploadKnowledgeAssetsStream(
+      filesToUpload,
+      {
+        onEvent: (event) => handleUploadProgressEvent(event, filesToUpload),
+      },
+      signal
+    )
+    if (!uploadSummary.value) {
+      uploadSummary.value = buildUploadSummary(uploadItems.value)
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : '知识库上传失败'
-    errorMessage.value = message
-    uploadItems.value = []
-    selectedFiles.value = []
-  } finally {
-    isUploading.value = false
-    abortController = null
+    if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+      errorMessage.value = '已取消上传，已保留当前批次进度。'
+      const startIndex = activeUploadIndex.value >= 0 ? activeUploadIndex.value : processedFiles.value
+      markCancelledItems(startIndex)
+    } else {
+      errorMessage.value = message
+      markInterruptedItems(message)
+    }
   }
+
+  isUploading.value = false
+  if (!uploadSummary.value) {
+    uploadSummary.value = buildUploadSummary(uploadItems.value)
+  }
+  abortController = null
 }
 
 function cancelUpload() {
@@ -208,13 +288,15 @@ function cancelUpload() {
 function resetUploadFeedback() {
   uploadSummary.value = null
   errorMessage.value = ''
+  backendUploadProgressPercent.value = null
+  animateDisplayedProgress(0)
 }
 
 function syncPendingUploadItems() {
-  uploadItems.value = selectedFiles.value.map((file) => createPendingItem(file, 'pending'))
+  uploadItems.value = selectedFiles.value.map((file, index) => createPendingItem(file, 'pending', index + 1))
 }
 
-function createPendingItem(file: File, status: string): LocalUploadItem {
+function createPendingItem(file: File, status: LocalUploadStatus, order: number): LocalUploadItem {
   const sourceType = guessSourceType(file.name)
   return {
     fileName: file.name,
@@ -226,7 +308,292 @@ function createPendingItem(file: File, status: string): LocalUploadItem {
     status,
     errorMessage: null,
     fileSize: file.size,
+    order,
+    stage: status === 'queued' ? '排队' : undefined,
+    stageProgress: status === 'queued' ? 0 : resolveStageProgress(),
   }
+}
+
+function createResultItem(
+  result: RagUploadFileResult,
+  file: File,
+  order: number,
+  stage?: string,
+  stageProgress?: number
+): LocalUploadItem {
+  return {
+    ...result,
+    status: normalizeUploadStatus(result.status),
+    fileSize: file.size,
+    order,
+    stage,
+    stageProgress: stageProgress ?? resolveResultProgress(result.status, stage),
+  }
+}
+
+function createFailedItem(file: File, order: number, message: string): LocalUploadItem {
+  return {
+    ...createPendingItem(file, 'failed', order),
+    errorMessage: message,
+  }
+}
+
+function replaceUploadItem(index: number, item: LocalUploadItem) {
+  uploadItems.value = uploadItems.value.map((currentItem, currentIndex) =>
+    currentIndex === index ? item : currentItem
+  )
+}
+
+function patchUploadItem(index: number, patch: Partial<LocalUploadItem>) {
+  uploadItems.value = uploadItems.value.map((currentItem, currentIndex) =>
+    currentIndex === index ? { ...currentItem, ...patch } : currentItem
+  )
+}
+
+function markCancelledItems(startIndex: number) {
+  uploadItems.value = uploadItems.value.map((item, index) => {
+    if (index < startIndex || item.status === 'success' || item.status === 'failed') return item
+    return {
+      ...item,
+      status: 'cancelled',
+      errorMessage: '已取消上传',
+      stageProgress: item.stageProgress,
+    }
+  })
+}
+
+function markInterruptedItems(message: string) {
+  uploadItems.value = uploadItems.value.map((item) => {
+    if (item.status === 'success' || item.status === 'failed' || item.status === 'cancelled') return item
+    if (item.status === 'uploading') {
+      return {
+        ...item,
+        status: 'failed',
+        errorMessage: message,
+        stageProgress: Math.max(item.stageProgress, 1),
+      }
+    }
+    return {
+      ...item,
+      status: 'cancelled',
+      errorMessage: '请求中断，未进入处理',
+      stageProgress: item.stageProgress,
+    }
+  })
+}
+
+function buildUploadSummary(items: LocalUploadItem[]): RagUploadResponse {
+  return {
+    totalFiles: items.length,
+    succeededFiles: items.filter((item) => item.status === 'success').length,
+    failedFiles: items.filter((item) => item.status === 'failed').length,
+    inserted: items.reduce((sum, item) => sum + item.insertedCount, 0),
+    files: items.map(toRagUploadFileResult),
+  }
+}
+
+function toRagUploadFileResult(item: LocalUploadItem): RagUploadFileResult {
+  return {
+    fileName: item.fileName,
+    contentType: item.contentType,
+    sourceType: item.sourceType,
+    ingestSource: item.ingestSource,
+    chunkCount: item.chunkCount,
+    insertedCount: item.insertedCount,
+    status: item.status,
+    errorMessage: item.errorMessage,
+  }
+}
+
+function countUploadItems(statuses: LocalUploadStatus[]): number {
+  const statusSet = new Set<LocalUploadStatus>(statuses)
+  return uploadItems.value.filter((item) => statusSet.has(item.status)).length
+}
+
+function animateDisplayedProgress(targetPercent: number) {
+  const normalizedTarget = clampProgress(targetPercent)
+  if (normalizedTarget <= displayedUploadProgressPercent.value) {
+    displayedUploadProgressPercent.value = normalizedTarget
+    stopProgressAnimation()
+    return
+  }
+
+  stopProgressAnimation()
+  progressAnimationTimer = window.setInterval(() => {
+    const distance = normalizedTarget - displayedUploadProgressPercent.value
+    if (distance <= 0) {
+      displayedUploadProgressPercent.value = normalizedTarget
+      stopProgressAnimation()
+      return
+    }
+
+    const step = Math.max(1, Math.ceil(distance / 5))
+    displayedUploadProgressPercent.value = Math.min(normalizedTarget, displayedUploadProgressPercent.value + step)
+  }, 80)
+}
+
+function stopProgressAnimation() {
+  if (progressAnimationTimer === null) return
+  window.clearInterval(progressAnimationTimer)
+  progressAnimationTimer = null
+}
+
+function clampProgress(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(100, Math.max(0, Math.round(value)))
+}
+
+function resolveItemProgress(item: LocalUploadItem): number {
+  if (item.status === 'success' || item.status === 'failed') return 1
+  if (item.status === 'uploading') return Math.max(0.08, item.stageProgress)
+  return item.stageProgress
+}
+
+function normalizeUploadStatus(status: string): LocalUploadStatus {
+  if (status === 'success' || status === 'failed') return status
+  if (status === 'uploading' || status === 'queued' || status === 'cancelled') return status
+  return 'pending'
+}
+
+function handleUploadProgressEvent(event: RagUploadProgressEvent, files: File[]) {
+  const eventName = event.event
+  syncBackendUploadProgress(event)
+  if (eventName === 'file-start' || eventName === 'file-stage') {
+    updateActiveUploadItem(event, files)
+    return
+  }
+
+  if (eventName === 'file-result') {
+    updateResultUploadItem(event, files)
+    return
+  }
+
+  if (eventName === 'batch-complete') {
+    const summary = normalizeUploadSummary(event.summary ?? event)
+    if (summary) {
+      uploadSummary.value = summary
+    }
+  }
+}
+
+function updateActiveUploadItem(event: RagUploadProgressEvent, files: File[]) {
+  const index = resolveEventFileIndex(event, files)
+  if (index < 0) return
+  const file = files[index]
+  if (!file || !uploadItems.value[index]) return
+  const stage = normalizeEventStage(event)
+  patchUploadItem(index, {
+    ...createPendingItem(file, 'uploading', index + 1),
+    stage,
+    stageProgress: resolveEventFileProgress(event, stage),
+    errorMessage: null,
+  })
+}
+
+function updateResultUploadItem(event: RagUploadProgressEvent, files: File[]) {
+  const index = resolveEventFileIndex(event, files)
+  if (index < 0) return
+  const file = files[index]
+  if (!file) return
+  const result = normalizeUploadFileResult(event.result)
+  const stage = normalizeEventStage(event)
+  replaceUploadItem(
+    index,
+    result
+      ? createResultItem(result, file, index + 1, stage, resolveEventFileProgress(event, stage))
+      : createFailedItem(file, index + 1, event.message || '后端未返回文件结果')
+  )
+}
+
+function syncBackendUploadProgress(event: RagUploadProgressEvent) {
+  const progressPercent = normalizeOptionalPercent(event.progressPercent ?? event.progress_percent)
+  if (progressPercent === null) return
+  backendUploadProgressPercent.value = progressPercent
+}
+
+function resolveEventFileIndex(event: RagUploadProgressEvent, files: File[]): number {
+  const rawIndex = event.fileIndex ?? event.file_index
+  if (typeof rawIndex === 'number' && rawIndex > 0) return rawIndex - 1
+
+  const fileName = normalizeString(event.fileName ?? event.file_name)
+  if (!fileName) return -1
+  return files.findIndex((file) => file.name === fileName)
+}
+
+function normalizeEventStage(event: RagUploadProgressEvent): string | undefined {
+  const stage = normalizeString(event.stage)
+  if (stage) return stage
+  return normalizeString(event.message) || undefined
+}
+
+function resolveStageProgress(stage?: string): number {
+  const normalizedStage = normalizeString(stage)
+  if (!normalizedStage) return 0.08
+  const matchedStage = UPLOAD_STAGE_PROGRESS.find((item) => normalizedStage.includes(item.keyword))
+  return matchedStage?.progress ?? 0.35
+}
+
+function resolveResultProgress(status: string, stage?: string): number {
+  if (status === 'success' || status === 'failed') return 1
+  return resolveStageProgress(stage)
+}
+
+function resolveEventFileProgress(event: RagUploadProgressEvent, stage?: string): number {
+  const fileProgressPercent = normalizeOptionalPercent(event.fileProgressPercent ?? event.file_progress_percent)
+  if (fileProgressPercent !== null) return fileProgressPercent / 100
+  return resolveStageProgress(stage)
+}
+
+function normalizeUploadFileResult(value: unknown): RagUploadFileResult | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  const fileName = normalizeString(raw.fileName ?? raw.file_name)
+  if (!fileName) return null
+  return {
+    fileName,
+    contentType: normalizeString(raw.contentType ?? raw.content_type) || 'application/octet-stream',
+    sourceType: normalizeString(raw.sourceType ?? raw.source_type) || 'document',
+    ingestSource: normalizeString(raw.ingestSource ?? raw.ingest_source) || 'text_document',
+    chunkCount: normalizeNumber(raw.chunkCount ?? raw.chunk_count),
+    insertedCount: normalizeNumber(raw.insertedCount ?? raw.inserted_count),
+    status: normalizeString(raw.status) || 'failed',
+    errorMessage: normalizeNullableString(raw.errorMessage ?? raw.error_message),
+  }
+}
+
+function normalizeUploadSummary(value: unknown): RagUploadResponse | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  const files = Array.isArray(raw.files)
+    ? raw.files.map(normalizeUploadFileResult).filter((item): item is RagUploadFileResult => item !== null)
+    : uploadItems.value.map(toRagUploadFileResult)
+  return {
+    totalFiles: normalizeNumber(raw.totalFiles ?? raw.total_files) || files.length,
+    succeededFiles: normalizeNumber(raw.succeededFiles ?? raw.succeeded_files),
+    failedFiles: normalizeNumber(raw.failedFiles ?? raw.failed_files),
+    inserted: normalizeNumber(raw.inserted),
+    files,
+  }
+}
+
+function normalizeNumber(value: unknown): number {
+  const numberValue = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numberValue) ? numberValue : 0
+}
+
+function normalizeOptionalPercent(value: unknown): number | null {
+  const numberValue = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numberValue)) return null
+  return clampProgress(numberValue)
+}
+
+function normalizeString(value: unknown): string {
+  return String(value ?? '').trim()
+}
+
+function normalizeNullableString(value: unknown): string | null {
+  const text = normalizeString(value)
+  return text || null
 }
 
 function dedupeFiles(files: File[]): File[] {
@@ -262,6 +629,8 @@ function ingestSourceLabel(ingestSource: string): string {
 function statusLabel(status: string): string {
   if (status === 'success') return '成功'
   if (status === 'failed') return '失败'
+  if (status === 'cancelled') return '已取消'
+  if (status === 'queued') return '排队中'
   if (status === 'uploading') return '处理中'
   return '待上传'
 }
@@ -270,27 +639,8 @@ function statusLabel(status: string): string {
 <template>
   <section class="knowledge-panel">
     <div class="panel-shell">
-      <header class="page-header">
-        <div class="header-copy">
-          <p class="eyebrow">Knowledge Base</p>
-          <h1>知识库上传与入库</h1>
-          <p class="header-text">{{ headerText }}</p>
-        </div>
-        <div class="header-status">
-          <span class="phase-pill" :class="`phase-${uploadPhase}`">{{ phaseLabel }}</span>
-          <span v-if="hasFiles || uploadSummary" class="batch-pill">{{ totalFiles }} 个文件</span>
-        </div>
-      </header>
-
       <div class="workspace-layout">
         <section class="panel main-card">
-          <div class="card-head">
-            <div>
-              <p class="section-label">Upload Workspace</p>
-              <h2>上传与结果</h2>
-            </div>
-          </div>
-
           <div
             class="dropzone"
             :class="{ 'is-drag-over': isDragOver, 'is-disabled': isUploading }"
@@ -307,22 +657,41 @@ function statusLabel(status: string): string {
               :accept="ACCEPT"
               @change="onFileChange"
             />
-            <div class="dropzone-icon" aria-hidden="true">KB</div>
-            <h3>拖拽文件到这里，或手动选择资料</h3>
-            <p>文档与图片可混合上传，处理结果会在下方直接更新。</p>
+            <div class="dropzone-icon" aria-hidden="true">
+              <CloudUpload :size="30" stroke-width="1.75" />
+            </div>
+            <h3>拖拽或选择文件</h3>
+            <dl class="upload-facts">
+              <div v-for="fact in guidanceFacts" :key="fact.label" class="fact-row">
+                <span class="fact-icon" aria-hidden="true">
+                  <FileText v-if="fact.icon === 'format'" :size="17" stroke-width="1.8" />
+                  <ShieldCheck v-else-if="fact.icon === 'limit'" :size="17" stroke-width="1.8" />
+                  <Server v-else-if="fact.icon === 'target'" :size="17" stroke-width="1.8" />
+                  <ScanText v-else :size="17" stroke-width="1.8" />
+                </span>
+                <div>
+                  <dt>{{ fact.label }}</dt>
+                  <dd>{{ fact.value }}</dd>
+                </div>
+              </div>
+            </dl>
           </div>
 
           <div class="panel-toolbar">
             <button class="primary-btn" type="button" :disabled="isUploading" @click="openFilePicker">
+              <FileUp :size="18" stroke-width="1.9" aria-hidden="true" />
               选择文件
             </button>
             <button class="ghost-btn" type="button" :disabled="!hasFiles || isUploading" @click="clearFiles">
+              <Trash2 :size="17" stroke-width="1.9" aria-hidden="true" />
               清空列表
             </button>
             <button class="ghost-btn" type="button" :disabled="!hasFiles || isUploading" @click="handleUpload">
+              <Play :size="17" stroke-width="1.9" aria-hidden="true" />
               开始上传
             </button>
             <button v-if="isUploading" class="ghost-btn danger-btn" type="button" @click="cancelUpload">
+              <CircleX :size="17" stroke-width="1.9" aria-hidden="true" />
               取消上传
             </button>
           </div>
@@ -331,10 +700,42 @@ function statusLabel(status: string): string {
             <p class="compact-summary">{{ compactSummary }}</p>
             <ul class="metric-list">
               <li v-for="metric in compactMetrics" :key="metric.label" class="metric-item">
-                <span class="metric-label">{{ metric.label }}</span>
-                <strong>{{ metric.value }}</strong>
+                <span class="metric-icon" aria-hidden="true">
+                  <FileText v-if="metric.icon === 'files'" :size="19" stroke-width="1.8" />
+                  <ListChecks v-else-if="metric.icon === 'checks'" :size="19" stroke-width="1.8" />
+                  <Blocks v-else :size="19" stroke-width="1.8" />
+                </span>
+                <span>
+                  <span class="metric-label">{{ metric.label }}</span>
+                  <strong>{{ metric.value }}</strong>
+                </span>
               </li>
             </ul>
+          </div>
+
+          <div
+            v-if="hasUploadItems"
+            class="upload-progress-card"
+            :class="{ 'is-uploading': isUploading, 'is-error': uploadPhase === 'error' }"
+          >
+            <div class="progress-top">
+              <div class="progress-copy">
+                <span>文件级进度</span>
+                <strong>{{ uploadProgressText }}</strong>
+              </div>
+              <span class="progress-percent">{{ displayedUploadProgressPercent }}%</span>
+            </div>
+            <div
+              class="progress-track"
+              role="progressbar"
+              aria-label="知识库上传文件级进度"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              :aria-valuenow="displayedUploadProgressPercent"
+            >
+              <span :style="{ width: `${displayedUploadProgressPercent}%` }"></span>
+            </div>
+            <p class="progress-assist">{{ progressAssistText }}</p>
           </div>
 
           <p v-if="errorMessage" class="panel-error">{{ errorMessage }}</p>
@@ -346,13 +747,25 @@ function statusLabel(status: string): string {
             </div>
 
             <div v-if="!hasUploadItems" class="results-empty" :class="{ 'is-error': uploadPhase === 'error' }">
-              <div class="empty-mark">KB</div>
+              <div class="empty-mark" aria-hidden="true">
+                <DatabaseZap :size="28" stroke-width="1.75" />
+              </div>
               <h3>{{ emptyStateTitle }}</h3>
               <p>{{ emptyStateText }}</p>
             </div>
 
             <ul v-else class="result-list">
-              <li v-for="(item, index) in uploadItems" :key="`${item.fileName}-${index}`" class="result-item">
+              <li
+                v-for="(item, index) in uploadItems"
+                :key="`${item.fileName}-${index}`"
+                class="result-item"
+                :class="`result-${item.status}`"
+              >
+                <span class="source-icon" aria-hidden="true">
+                  <ImageIcon v-if="item.sourceType === 'image'" :size="18" stroke-width="1.8" />
+                  <FileText v-else :size="18" stroke-width="1.8" />
+                </span>
+
                 <div class="result-main">
                   <div class="result-heading">
                     <div>
@@ -366,8 +779,14 @@ function statusLabel(status: string): string {
                   </div>
 
                   <div class="file-submeta">
+                    <span>第 {{ item.order }} 个</span>
+                    <span v-if="item.stage">阶段 {{ item.stage }}</span>
                     <span>chunk {{ item.chunkCount }}</span>
                     <span>入库 {{ item.insertedCount }}</span>
+                  </div>
+
+                  <div v-if="item.status === 'uploading'" class="file-progress-line" aria-hidden="true">
+                    <span></span>
                   </div>
 
                   <p v-if="item.errorMessage" class="file-error">{{ item.errorMessage }}</p>
@@ -381,864 +800,17 @@ function statusLabel(status: string): string {
                   title="删除文件"
                   @click="removeFile(index)"
                 >
-                  <svg class="remove-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M3 6h18" />
-                    <path d="M8 6V4h8v2" />
-                    <path d="M19 6l-1 14H6L5 6" />
-                    <path d="M10 11v5" />
-                    <path d="M14 11v5" />
-                  </svg>
+                  <Trash2 :size="16" stroke-width="1.9" aria-hidden="true" />
                 </button>
               </li>
             </ul>
           </div>
         </section>
 
-        <aside class="panel guidance-card">
-          <div class="guidance-head">
-            <p class="section-label">Guidance</p>
-            <h2>处理说明</h2>
-            <p>稳定规则集中放在这里，不在主工作区重复出现。</p>
-          </div>
-
-          <dl class="guidance-facts">
-            <div v-for="fact in guidanceFacts" :key="fact.label" class="fact-row">
-              <dt>{{ fact.label }}</dt>
-              <dd>{{ fact.value }}</dd>
-            </div>
-          </dl>
-
-          <div class="guidance-flow">
-            <h3>入库路径</h3>
-            <ul>
-              <li v-for="note in ingestNotes" :key="note">{{ note }}</li>
-            </ul>
-          </div>
-        </aside>
       </div>
     </div>
   </section>
 </template>
 
-<style scoped>
-.knowledge-panel {
-  --kb-bg: #f3ede6;
-  --kb-bg-soft: #f8f4ee;
-  --kb-surface: rgba(255, 252, 248, 0.95);
-  --kb-border: rgba(122, 91, 68, 0.12);
-  --kb-border-strong: rgba(122, 91, 68, 0.18);
-  --kb-text: #2d241e;
-  --kb-text-soft: #6f5a4c;
-  --kb-text-muted: #8f7868;
-  --kb-accent: #c9794e;
-  --kb-accent-soft: rgba(201, 121, 78, 0.12);
-  --kb-success-soft: rgba(68, 145, 110, 0.14);
-  --kb-success-text: #2f7b58;
-  --kb-error-soft: rgba(186, 88, 67, 0.14);
-  --kb-error-text: #a84839;
-  --kb-pending-soft: rgba(116, 101, 90, 0.12);
-  --kb-pending-text: #6d5a4e;
-  --kb-shadow: 0 18px 36px rgba(80, 57, 41, 0.08);
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
-  background:
-    radial-gradient(circle at top left, rgba(239, 214, 189, 0.45), transparent 24%),
-    linear-gradient(180deg, var(--kb-bg) 0%, var(--kb-bg-soft) 100%);
-}
-
-.panel-shell {
-  min-height: 100%;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.panel {
-  border-radius: 24px;
-  border: 1px solid var(--kb-border);
-  background: var(--kb-surface);
-  box-shadow: var(--kb-shadow);
-}
-
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 22px;
-  border-radius: 24px;
-  border: 1px solid var(--kb-border-strong);
-  background:
-    radial-gradient(circle at top left, rgba(243, 220, 199, 0.38), transparent 28%),
-    linear-gradient(135deg, rgba(249, 244, 238, 0.98), rgba(241, 233, 223, 0.94));
-}
-
-.header-copy {
-  min-width: 0;
-  max-width: 720px;
-}
-
-.eyebrow,
-.section-label {
-  margin: 0 0 8px;
-  color: #9e6d4d;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.page-header h1,
-.card-head h2,
-.guidance-head h2 {
-  margin: 0;
-  color: var(--kb-text);
-}
-
-.page-header h1 {
-  font-size: 30px;
-  line-height: 1.12;
-}
-
-.header-text,
-.guidance-head p,
-.results-empty p,
-.file-meta,
-.file-error,
-.guidance-flow li {
-  color: var(--kb-text-soft);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.header-text {
-  margin: 10px 0 0;
-}
-
-.header-status {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.phase-pill,
-.batch-pill,
-.status-pill,
-.section-count-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.phase-pill,
-.batch-pill {
-  background: rgba(255, 255, 255, 0.82);
-  color: var(--kb-text-soft);
-  border: 1px solid rgba(122, 91, 68, 0.08);
-}
-
-.phase-ready,
-.phase-idle {
-  background: var(--kb-pending-soft);
-  color: var(--kb-pending-text);
-  border-color: transparent;
-}
-
-.phase-uploading {
-  background: var(--kb-accent-soft);
-  color: #ab643b;
-  border-color: transparent;
-}
-
-.phase-completed {
-  background: var(--kb-success-soft);
-  color: var(--kb-success-text);
-  border-color: transparent;
-}
-
-.phase-error {
-  background: var(--kb-error-soft);
-  color: var(--kb-error-text);
-  border-color: transparent;
-}
-
-.workspace-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.78fr);
-  gap: 16px;
-  align-items: start;
-}
-
-.main-card,
-.guidance-card {
-  padding: 20px;
-}
-
-.main-card {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.card-head,
-.guidance-head {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.card-head h2,
-.guidance-head h2 {
-  font-size: 22px;
-  line-height: 1.2;
-}
-
-.dropzone {
-  min-height: 188px;
-  border: 1.5px dashed rgba(170, 132, 104, 0.42);
-  border-radius: 22px;
-  padding: 24px 18px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  text-align: center;
-  background:
-    linear-gradient(135deg, rgba(255, 246, 236, 0.94), rgba(251, 247, 242, 0.94)),
-    repeating-linear-gradient(
-      -45deg,
-      rgba(201, 121, 78, 0.025),
-      rgba(201, 121, 78, 0.025) 12px,
-      rgba(255, 255, 255, 0.02) 12px,
-      rgba(255, 255, 255, 0.02) 24px
-    );
-  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
-}
-
-.dropzone.is-drag-over {
-  border-color: var(--kb-accent);
-  transform: translateY(-1px);
-  box-shadow: 0 14px 26px rgba(201, 121, 78, 0.12);
-}
-
-.dropzone.is-disabled {
-  opacity: 0.7;
-}
-
-.file-input {
-  display: none;
-}
-
-.dropzone-icon,
-.empty-mark {
-  width: 54px;
-  height: 54px;
-  border-radius: 18px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, #e7ddd2, #f5efe9);
-  color: var(--kb-text);
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  box-shadow: 0 10px 18px rgba(80, 57, 41, 0.08);
-}
-
-.dropzone h3,
-.result-head h3,
-.results-empty h3,
-.guidance-flow h3 {
-  margin: 0;
-  color: var(--kb-text);
-}
-
-.dropzone h3 {
-  font-size: 18px;
-}
-
-.dropzone p {
-  margin: 0;
-  max-width: 520px;
-  color: var(--kb-text-soft);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.panel-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.primary-btn,
-.ghost-btn,
-.remove-btn {
-  border: none;
-  cursor: pointer;
-  transition: transform 0.18s ease, background-color 0.18s ease, color 0.18s ease, opacity 0.18s ease;
-}
-
-.primary-btn,
-.ghost-btn {
-  min-height: 42px;
-  padding: 0 16px;
-  border-radius: 14px;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.primary-btn {
-  background: var(--kb-accent);
-  color: #fff;
-}
-
-.ghost-btn {
-  background: #efe7dd;
-  color: var(--kb-text-soft);
-}
-
-.danger-btn {
-  background: rgba(186, 88, 67, 0.1);
-  color: var(--kb-error-text);
-}
-
-.primary-btn:hover:not(:disabled),
-.ghost-btn:hover:not(:disabled),
-.remove-btn:hover {
-  transform: translateY(-1px);
-}
-
-.primary-btn:disabled,
-.ghost-btn:disabled {
-  opacity: 0.58;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.compact-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid var(--kb-border);
-  background: rgba(255, 255, 255, 0.84);
-}
-
-.compact-summary {
-  margin: 0;
-  color: var(--kb-text);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.5;
-}
-
-.metric-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  min-width: min(100%, 340px);
-}
-
-.metric-item {
-  padding: 10px 12px;
-  border-radius: 16px;
-  background: rgba(248, 242, 236, 0.88);
-  text-align: center;
-}
-
-.metric-label {
-  display: block;
-  color: var(--kb-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.metric-item strong {
-  display: block;
-  margin-top: 6px;
-  color: var(--kb-text);
-  font-size: 22px;
-  line-height: 1;
-}
-
-.panel-error {
-  margin: 0;
-  color: var(--kb-error-text);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.result-block {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.result-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.result-head h3 {
-  font-size: 18px;
-  line-height: 1.2;
-}
-
-.section-count-chip {
-  color: var(--kb-text-soft);
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid var(--kb-border);
-}
-
-.results-empty {
-  border-radius: 20px;
-  border: 1px solid var(--kb-border);
-  background:
-    linear-gradient(135deg, rgba(249, 243, 236, 0.85), rgba(255, 255, 255, 0.8)),
-    repeating-linear-gradient(
-      -45deg,
-      rgba(201, 121, 78, 0.02),
-      rgba(201, 121, 78, 0.02) 12px,
-      rgba(255, 255, 255, 0.02) 12px,
-      rgba(255, 255, 255, 0.02) 24px
-    );
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  text-align: center;
-  padding: 20px;
-}
-
-.results-empty.is-error {
-  border-color: rgba(186, 88, 67, 0.18);
-  background: linear-gradient(135deg, rgba(252, 242, 239, 0.88), rgba(255, 255, 255, 0.8));
-}
-
-.result-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.result-item {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid var(--kb-border);
-  background: rgba(255, 255, 255, 0.84);
-}
-
-.result-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.result-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.file-name {
-  margin: 0;
-  color: var(--kb-text);
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 1.45;
-}
-
-.file-meta {
-  margin: 4px 0 0;
-}
-
-.file-submeta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.file-submeta span {
-  color: var(--kb-text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.status-pill {
-  padding-inline: 10px;
-}
-
-.status-success {
-  background: var(--kb-success-soft);
-  color: var(--kb-success-text);
-}
-
-.status-failed {
-  background: var(--kb-error-soft);
-  color: var(--kb-error-text);
-}
-
-.status-uploading {
-  background: var(--kb-accent-soft);
-  color: #ab643b;
-}
-
-.status-pending {
-  background: var(--kb-pending-soft);
-  color: var(--kb-pending-text);
-}
-
-.file-error {
-  margin: 10px 0 0;
-  color: var(--kb-error-text);
-}
-
-.remove-btn {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border-radius: 12px;
-  background: rgba(186, 88, 67, 0.1);
-  color: #b1633d;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.remove-btn:hover {
-  background: rgba(186, 88, 67, 0.16);
-  color: #9b432b;
-}
-
-.remove-icon {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.guidance-card {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.guidance-facts {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.fact-row {
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(248, 242, 236, 0.86);
-}
-
-.fact-row dt {
-  margin: 0;
-  color: var(--kb-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.fact-row dd {
-  margin: 6px 0 0;
-  color: var(--kb-text);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.5;
-}
-
-.guidance-flow {
-  padding: 14px 16px;
-  border-radius: 18px;
-  background:
-    radial-gradient(circle at top left, rgba(240, 218, 196, 0.28), transparent 30%),
-    linear-gradient(135deg, rgba(250, 245, 239, 0.98), rgba(244, 237, 228, 0.92));
-}
-
-.guidance-flow ul {
-  margin: 10px 0 0;
-  padding-left: 18px;
-}
-
-@media (max-width: 1120px) {
-  .workspace-layout {
-    grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.8fr);
-  }
-
-  .compact-bar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .metric-list {
-    width: 100%;
-    min-width: 0;
-  }
-}
-
-@media (max-width: 960px) {
-  .panel-shell {
-    padding: 16px;
-  }
-
-  .workspace-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .page-header,
-  .main-card,
-  .guidance-card {
-    padding: 18px;
-  }
-}
-
-@media (max-width: 720px) {
-  .panel-shell {
-    padding: 8px;
-    gap: 8px;
-  }
-
-  .page-header,
-  .main-card,
-  .guidance-card,
-  .results-empty,
-  .result-item,
-  .compact-bar {
-    border-radius: 14px;
-  }
-
-  .page-header,
-  .result-heading,
-  .result-item,
-  .panel-toolbar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .page-header h1 {
-    font-size: 22px;
-  }
-
-  .header-status,
-  .panel-toolbar {
-    width: 100%;
-  }
-
-  .primary-btn,
-  .ghost-btn {
-    width: 100%;
-    min-height: 34px;
-    border-radius: 10px;
-    font-size: 12px;
-  }
-
-  .metric-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-  }
-
-  .dropzone {
-    min-height: 128px;
-    padding: 14px 12px;
-    border-radius: 14px;
-    gap: 7px;
-  }
-
-  .dropzone-icon,
-  .empty-mark {
-    width: 42px;
-    height: 42px;
-    border-radius: 13px;
-    font-size: 14px;
-  }
-
-  .dropzone h3,
-  .result-head h3,
-  .results-empty h3,
-  .guidance-flow h3 {
-    font-size: 15px;
-  }
-
-  .dropzone p,
-  .header-text,
-  .guidance-head p,
-  .results-empty p,
-  .file-meta,
-  .file-error,
-  .guidance-flow li {
-    font-size: 12px;
-    line-height: 1.45;
-  }
-
-  .main-card,
-  .guidance-card {
-    gap: 10px;
-  }
-}
-
-@media (max-width: 520px) {
-  .knowledge-panel {
-    overflow-x: hidden;
-  }
-
-  .panel-shell {
-    padding: 6px 7px 8px;
-    gap: 7px;
-  }
-
-  .page-header,
-  .main-card,
-  .guidance-card {
-    padding: 10px;
-  }
-
-  .page-header h1 {
-    font-size: 20px;
-  }
-
-  .eyebrow,
-  .section-label {
-    margin-bottom: 4px;
-    font-size: 10px;
-  }
-
-  .header-text {
-    margin-top: 6px;
-  }
-
-  .header-status {
-    justify-content: flex-start;
-    gap: 6px;
-  }
-
-  .phase-pill,
-  .batch-pill,
-  .status-pill,
-  .section-count-chip {
-    min-height: 24px;
-    padding: 0 8px;
-    font-size: 10.5px;
-  }
-
-  .metric-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .metric-item {
-    padding: 7px 6px;
-    border-radius: 11px;
-    text-align: center;
-  }
-
-  .metric-label {
-    font-size: 9.5px;
-  }
-
-  .metric-item strong {
-    margin-top: 4px;
-    font-size: 17px;
-  }
-
-  .compact-bar {
-    gap: 8px;
-    padding: 9px;
-  }
-
-  .compact-summary {
-    font-size: 12px;
-  }
-
-  .result-list,
-  .result-block {
-    gap: 7px;
-  }
-
-  .result-item {
-    gap: 8px;
-    padding: 9px;
-  }
-
-  .file-name {
-    font-size: 13px;
-  }
-
-  .result-heading {
-    width: 100%;
-  }
-
-  .status-pill {
-    align-self: flex-start;
-  }
-
-  .remove-btn {
-    width: 30px;
-    height: 30px;
-    min-height: 30px;
-    border-radius: 9px;
-  }
-
-  .guidance-card {
-    gap: 8px;
-  }
-
-  .guidance-facts {
-    gap: 6px;
-  }
-
-  .fact-row {
-    padding: 8px 9px;
-    border-radius: 11px;
-  }
-
-  .fact-row dd {
-    margin-top: 4px;
-    font-size: 12px;
-  }
-
-  .guidance-flow {
-    padding: 9px 10px;
-    border-radius: 12px;
-  }
-}
-</style>
+<style scoped src="./KnowledgeBasePanel.css"></style>
+<style scoped src="./KnowledgeBasePanel.responsive.css"></style>

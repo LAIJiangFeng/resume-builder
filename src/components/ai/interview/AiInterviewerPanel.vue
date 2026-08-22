@@ -1,5 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import {
+  ChevronDown,
+  FileText,
+  History,
+  Pause,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Settings,
+  Square,
+  Timer,
+} from 'lucide-vue-next'
 import AiConfigDialog from '@/components/ai/AiConfigDialog.vue'
 import InterviewSimulationPanel from '@/components/ai/interview/InterviewSimulationPanel.vue'
 import ResumePreviewOverlay from '@/components/ai/interview/ResumePreviewOverlay.vue'
@@ -64,7 +76,6 @@ const aiConfigStore = useAiConfigStore()
 
 type SpeechEngine = 'realtime' | 'browser'
 type SpeechUiState = Exclude<SpeechRuntimeState, 'closed'> | 'idle'
-type FloatingPanel = 'mode' | 'controls'
 
 const BACKEND_SPEECH_AUTO_DISABLE_THRESHOLD = 2
 
@@ -77,8 +88,7 @@ const isLoading = ref(false)
 const isListening = ref(false)
 const showResumePreview = ref(false)
 const showAiConfig = ref(false)
-const activeFloatingPanel = ref<FloatingPanel | null>(null)
-const floatingActionsRef = ref<HTMLElement | null>(null)
+const historyFieldRef = ref<HTMLElement | null>(null)
 const errorMsg = ref('')
 const inputText = ref('')
 const finalEvaluation = ref<FinalEvaluation | null>(null)
@@ -91,6 +101,7 @@ const currentSessionId = ref('')
 const sessionHistory = ref<InterviewSessionSummary[]>([])
 const selectedSessionId = ref('')
 const loadingSessionHistory = ref(false)
+const historyMenuOpen = ref(false)
 const sessionFinished = ref(false)
 const speechUiState = ref<SpeechUiState>('idle')
 
@@ -113,9 +124,6 @@ const interviewStatusText = computed(() => {
   return TEXT.statusRunning
 })
 const pauseButtonLabel = computed(() => (timerRunning.value ? '暂停' : '继续'))
-const assistantTurns = computed(() => messages.value.filter((item) => item.role === 'assistant').length)
-const userTurns = computed(() => messages.value.filter((item) => item.role === 'user').length)
-const currentRound = computed(() => Math.max(assistantTurns.value, userTurns.value))
 const canSend = computed(() => sessionStarted.value && !sessionFinished.value && inputText.value.trim() !== '' && !isLoading.value)
 const canStart = computed(() => !sessionStarted.value && !isLoading.value)
 const canTogglePause = computed(() => sessionStarted.value && !sessionFinished.value && remainingSeconds.value > 0 && !isLoading.value)
@@ -123,27 +131,11 @@ const canFinish = computed(() => sessionStarted.value && !isLoading.value && !se
 const canToggleVoice = computed(
   () => sessionStarted.value && !sessionFinished.value && !isLoading.value && speechUiState.value !== 'transcribing'
 )
-const configTooltipText = computed(() => '\u8bed\u97f3\u914d\u7f6e')
-const historyRefreshText = computed(() => (loadingSessionHistory.value ? TEXT.historyLoading : TEXT.historyRefresh))
-const speechStatusText = computed(() => {
-  const engineLabel = resolveSpeechEngineLabel(activeSpeechEngine.value)
-  if (!sessionStarted.value) {
-    return `语音 · ${aiConfigStore.shouldRequestBackendSpeech ? TEXT.speechPreferredLabel : TEXT.speechBrowserLabel}`
-  }
-  if (speechUiState.value === 'connecting') {
-    return `语音 · ${engineLabel}连接中`
-  }
-  if (speechUiState.value === 'connected') {
-    if (activeSpeechEngine.value === 'browser') {
-      return '语音 · 浏览器输入中'
-    }
-    return `语音 · ${engineLabel}识别中`
-  }
-  if (speechUiState.value === 'transcribing') {
-    return `语音 · ${engineLabel}转写中`
-  }
-  return `语音 · ${engineLabel}`
+const selectedSessionLabel = computed(() => {
+  const selected = sessionHistory.value.find((item) => item.sessionId === selectedSessionId.value)
+  return selected ? buildSessionOptionLabel(selected) : TEXT.historyPlaceholder
 })
+const historyRefreshText = computed(() => (loadingSessionHistory.value ? TEXT.historyLoading : TEXT.historyRefresh))
 const composerHintText = computed(() => {
   if (speechUiState.value === 'connecting') return TEXT.composerConnectingHint
   if (speechUiState.value === 'transcribing') return `${resolveSpeechEngineLabel(activeSpeechEngine.value)}处理中，请稍候`
@@ -504,10 +496,11 @@ function buildHistory(excludeLastMessageId?: string): InterviewHistoryItem[] {
 
 
 function buildSessionOptionLabel(item: InterviewSessionSummary): string {
-  const modeLabel = item.mode === 'candidate' ? '候选人模式' : '面试官模式'
-  const statusLabel = item.status === 'finished' ? '已结束' : '进行中'
+  const modeLabel = item.mode === 'candidate' ? '候选人' : '面试官'
+  const statusLabel = item.status === 'finished' ? '结束' : '进行中'
   const scoreLabel = item.totalScore == null ? '' : ` · ${item.totalScore}分`
-  const timeLabel = item.updatedAt.replace('T', ' ').slice(0, 16)
+  const normalizedTime = item.updatedAt.replace('T', ' ')
+  const timeLabel = `${normalizedTime.slice(5, 10)} ${normalizedTime.slice(11, 16)}`
   return `${timeLabel} · ${modeLabel} · ${statusLabel}${scoreLabel}`
 }
 
@@ -594,7 +587,19 @@ async function handleSessionSelectionChange() {
   }
 }
 
+function handleHistoryMenuToggle() {
+  if (loadingSessionHistory.value || sessionHistory.value.length === 0) return
+  historyMenuOpen.value = !historyMenuOpen.value
+}
+
+function handleHistoryOptionSelect(sessionId: string) {
+  selectedSessionId.value = sessionId
+  historyMenuOpen.value = false
+  void handleSessionSelectionChange()
+}
+
 function handleRefreshSessionHistory() {
+  historyMenuOpen.value = false
   void refreshSessionHistory(selectedSessionId.value || currentSessionId.value)
 }
 async function runInterview(command: InterviewCommand, userInput?: string) {
@@ -752,29 +757,18 @@ function handleGlobalKeydown(event: KeyboardEvent) {
 }
 
 function handleOpenAiConfig() {
-  activeFloatingPanel.value = null
   showAiConfig.value = true
 }
 
-function toggleFloatingPanel(panel: FloatingPanel) {
-  activeFloatingPanel.value = activeFloatingPanel.value === panel ? null : panel
-}
-
-function handleFloatingModeSwitch(nextMode: InterviewMode) {
-  handleModeSwitch(nextMode)
-  activeFloatingPanel.value = null
-}
-
-function handleFloatingResumeToggle() {
+function handleResumeToggle() {
   showResumePreview.value = !showResumePreview.value
-  activeFloatingPanel.value = null
 }
 
 function handleDocumentPointerDown(event: MouseEvent) {
   const target = event.target as Node | null
-  if (!target || !floatingActionsRef.value) return
-  if (!floatingActionsRef.value.contains(target)) {
-    activeFloatingPanel.value = null
+  if (!target) return
+  if (historyFieldRef.value && !historyFieldRef.value.contains(target)) {
+    historyMenuOpen.value = false
   }
 }
 
@@ -811,226 +805,206 @@ onUnmounted(() => {
 
 <template>
   <section class="ai-interviewer-panel">
-    <header class="topbar">
-      <select
-        v-model="selectedSessionId"
-        class="history-select"
-        :disabled="loadingSessionHistory"
-        @change="handleSessionSelectionChange"
-      >
-        <option value="">{{ TEXT.historyPlaceholder }}</option>
-        <option v-for="item in sessionHistory" :key="item.sessionId" :value="item.sessionId">
-          {{ buildSessionOptionLabel(item) }}
-        </option>
-      </select>
-      <button
-        class="history-refresh-btn"
-        :class="{ loading: loadingSessionHistory }"
-        type="button"
-        :disabled="loadingSessionHistory"
-        :title="historyRefreshText"
-        aria-label="刷新历史"
-        :aria-busy="loadingSessionHistory"
-        @click="handleRefreshSessionHistory"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M20 11a8 8 0 1 0-2.34 5.66" />
-          <path d="M20 4v7h-7" />
-        </svg>
-      </button>
-      <span
-        class="interview-status-pill"
-        :class="{
-          active: sessionStarted && !sessionFinished && remainingSeconds > 0,
-          finished: sessionFinished || remainingSeconds === 0,
-        }"
-      >
-        <span class="interview-status-dot" aria-hidden="true" />
-        {{ interviewStatusText }}
-      </span>
-    </header>
-
-    <div v-if="finalEvaluation" class="final-banner" :class="{ pass: finalEvaluation.passed, fail: !finalEvaluation.passed }">
-      {{ TEXT.totalScore }} {{ finalEvaluation.totalScore }}分｜{{ finalEvaluation.passed ? TEXT.pass : TEXT.fail }}｜{{ TEXT.projectInterview }}
-    </div>
-
-    <div class="workspace">
-      <InterviewSimulationPanel
-        :mode="mode"
-        :messages="messages"
-        :is-loading="isLoading"
-        :error-msg="errorMsg"
-        :input-text="inputText"
-        :can-send="canSend"
-        :is-listening="isListening"
-        :request-state="requestState"
-        :request-status-text="requestStatusText"
-        :composer-hint-text="composerHintText"
-        :streaming-assistant-message-id="streamingAssistantMessageId"
-        :session-started="sessionStarted"
-        :timer-text="timerText"
-        :timer-status-text="timerStatusText"
-        :current-round="currentRound"
-        :user-turns="userTurns"
-        :assistant-turns="assistantTurns"
-        :can-toggle-voice="canToggleVoice"
-        :can-start="canStart"
-        :can-toggle-pause="canTogglePause"
-        :can-finish="canFinish"
-        :session-finished="sessionFinished"
-        :timer-running="timerRunning"
-        :speech-state="speechUiState"
-        :speech-status-text="speechStatusText"
-        :show-controls="false"
-        @update:input-text="inputText = $event"
-        @start="handleStart"
-        @toggle-pause="handleTogglePause"
-        @finish="handleFinish"
-        @reset="handleReset"
-        @adjust-duration="adjustDuration"
-        @send="handleSend"
-        @toggle-voice="handleToggleVoice"
-      />
-
-      <ResumePreviewOverlay v-if="showResumePreview" @close="showResumePreview = false" />
-    </div>
-
-    <div ref="floatingActionsRef" class="interview-floating-tools" aria-label="AI 面试快捷操作">
-      <div class="floating-actions-stack">
-        <button
-          class="floating-action-btn"
-          type="button"
-          :title="configTooltipText"
-          :aria-label="configTooltipText"
-          @click="handleOpenAiConfig"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 17v-3" />
-            <path d="M4 10V7" />
-            <path d="M12 19v-5" />
-            <path d="M12 10V5" />
-            <path d="M20 16v-2" />
-            <path d="M20 10V6" />
-            <path d="M2.5 14h3" />
-            <path d="M10.5 10h3" />
-            <path d="M18.5 14h3" />
-          </svg>
-        </button>
-
-        <div class="floating-action-anchor">
-          <button
-            class="floating-action-btn"
-            :class="{ active: activeFloatingPanel === 'mode' }"
-            type="button"
-            title="模式切换"
-            aria-label="模式切换"
-            aria-haspopup="dialog"
-            :aria-expanded="activeFloatingPanel === 'mode'"
-            @click="toggleFloatingPanel('mode')"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M7 7h10" />
-              <path d="m14 4 3 3-3 3" />
-              <path d="M17 17H7" />
-              <path d="m10 14-3 3 3 3" />
-            </svg>
-          </button>
-
-          <div v-if="activeFloatingPanel === 'mode'" class="floating-popover mode-popover" role="dialog" aria-label="模式切换">
-            <p class="floating-popover-title">模式切换</p>
-            <div class="mode-option-list">
-              <button
-                type="button"
-                class="mode-option-btn"
-                :class="{ active: mode === 'candidate' }"
-                @click="handleFloatingModeSwitch('candidate')"
-              >
-                {{ TEXT.modeCandidate }}
-              </button>
-              <button
-                type="button"
-                class="mode-option-btn"
-                :class="{ active: mode === 'interviewer' }"
-                @click="handleFloatingModeSwitch('interviewer')"
-              >
-                {{ TEXT.modeInterviewer }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <button
-          class="floating-action-btn"
-          type="button"
-          :title="showResumePreview ? TEXT.hideResume : TEXT.showResume"
-          :aria-label="showResumePreview ? TEXT.hideResume : TEXT.showResume"
-          @click="handleFloatingResumeToggle"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M7 3h8l4 4v14H7z" />
-            <path d="M15 3v5h4" />
-            <path d="M10 12h6" />
-            <path d="M10 16h5" />
-          </svg>
-        </button>
-
-        <div class="floating-action-anchor">
-          <button
-            class="floating-action-btn console-action-btn"
-            :class="{ active: activeFloatingPanel === 'controls' }"
-            type="button"
-            title="面试控制台"
-            aria-label="面试控制台"
-            aria-haspopup="dialog"
-            :aria-expanded="activeFloatingPanel === 'controls'"
-            @click="toggleFloatingPanel('controls')"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 6h16" />
-              <path d="M4 12h16" />
-              <path d="M4 18h16" />
-              <circle cx="8" cy="6" r="2" />
-              <circle cx="16" cy="12" r="2" />
-              <circle cx="10" cy="18" r="2" />
-            </svg>
-          </button>
-
-          <div
-            v-if="activeFloatingPanel === 'controls'"
-            class="floating-popover controls-popover"
-            role="dialog"
-            aria-label="面试控制台"
-          >
-            <div class="console-header">
-              <div>
-                <p class="floating-popover-title">面试控制台</p>
-                <p class="console-helper">调整时长并控制当前会话</p>
-              </div>
-              <span class="console-status-pill" :class="{ active: timerRunning }">{{ timerStatusText }}</span>
-            </div>
-
-            <div class="console-timer-row">
-              <span class="console-label">时长</span>
-              <button type="button" class="console-mini-btn" @click="adjustDuration(-5)">-5m</button>
-              <span class="console-timer-value">{{ timerText }}</span>
-              <button type="button" class="console-mini-btn" @click="adjustDuration(5)">+5m</button>
-            </div>
-
-            <div class="console-action-grid">
-              <button v-if="canStart" type="button" class="console-btn primary" :disabled="isLoading" @click="handleStart">
-                开始
-              </button>
-              <button v-else type="button" class="console-btn" :disabled="!canTogglePause" @click="handleTogglePause">
-                {{ pauseButtonLabel }}
-              </button>
-              <button type="button" class="console-btn ghost" :disabled="isLoading" @click="handleReset">重置</button>
-              <button type="button" class="console-btn danger console-finish-btn" :disabled="!canFinish" @click="handleFinish">
-                结束并评分
-              </button>
-            </div>
-          </div>
+    <header class="interview-hero">
+      <div class="interview-identity">
+        <span class="interview-identity-mark" aria-hidden="true">AI</span>
+        <div class="interview-identity-copy">
+          <strong>简历 AI 面试</strong>
+          <span v-if="finalEvaluation">
+            {{ TEXT.projectInterview }} · {{ finalEvaluation.totalScore }}分 ·
+            {{ finalEvaluation.passed ? TEXT.pass : TEXT.fail }}
+          </span>
+          <span v-else>
+            {{ mode === 'candidate' ? '面试官追问' : '候选人模拟' }} · {{ interviewStatusText }}
+          </span>
         </div>
       </div>
+
+      <div class="interview-command-bar" aria-label="面试操作">
+        <div class="topbar-mode-switch" aria-label="面试模式">
+          <button
+            type="button"
+            :class="{ active: mode === 'candidate' }"
+            :aria-pressed="mode === 'candidate'"
+            @click="handleModeSwitch('candidate')"
+          >
+            面试官追问
+          </button>
+          <button
+            type="button"
+            :class="{ active: mode === 'interviewer' }"
+            :aria-pressed="mode === 'interviewer'"
+            @click="handleModeSwitch('interviewer')"
+          >
+            候选人模拟
+          </button>
+        </div>
+
+        <button
+          type="button"
+          class="topbar-action topbar-resume-action"
+          :class="{ active: showResumePreview }"
+          @click="handleResumeToggle"
+        >
+          <FileText :size="15" :stroke-width="1.9" aria-hidden="true" />
+          {{ showResumePreview ? TEXT.hideResume : TEXT.showResume }}
+        </button>
+
+        <button
+          type="button"
+          class="topbar-action topbar-config-action"
+          @click="handleOpenAiConfig"
+        >
+          <Settings :size="15" :stroke-width="1.9" aria-hidden="true" />
+          语音配置
+        </button>
+
+        <div class="topbar-duration" aria-label="面试时长">
+          <button type="button" aria-label="减少五分钟" @click="adjustDuration(-5)">-5</button>
+          <span>
+            <Timer :size="15" :stroke-width="1.9" aria-hidden="true" />
+            {{ durationMinutes }} 分钟
+          </span>
+          <button type="button" aria-label="增加五分钟" @click="adjustDuration(5)">+5</button>
+        </div>
+
+        <button
+          v-if="sessionStarted"
+          type="button"
+          class="topbar-action topbar-pause-action"
+          :disabled="!canTogglePause"
+          @click="handleTogglePause"
+        >
+          <Pause v-if="timerRunning" :size="15" :stroke-width="1.9" aria-hidden="true" />
+          <Play v-else :size="15" :stroke-width="1.9" aria-hidden="true" />
+          {{ pauseButtonLabel }}
+        </button>
+
+        <button
+          type="button"
+          class="topbar-action topbar-reset-action"
+          :disabled="isLoading"
+          @click="handleReset"
+        >
+          <RotateCcw :size="15" :stroke-width="1.9" aria-hidden="true" />
+          重置
+        </button>
+
+        <button
+          v-if="sessionStarted"
+          type="button"
+          class="topbar-action topbar-finish-action danger"
+          :disabled="!canFinish"
+          @click="handleFinish"
+        >
+          <Square :size="14" :stroke-width="1.9" aria-hidden="true" />
+          结束并评分
+        </button>
+      </div>
+
+      <div class="interview-hero-tools">
+        <div ref="historyFieldRef" class="history-field" aria-label="历史会话">
+          <History :size="16" :stroke-width="1.8" aria-hidden="true" />
+          <button
+            class="history-select"
+            type="button"
+            :disabled="loadingSessionHistory"
+            :aria-expanded="historyMenuOpen"
+            aria-haspopup="listbox"
+            @click="handleHistoryMenuToggle"
+          >
+            <span class="history-select-text">{{ selectedSessionLabel }}</span>
+            <ChevronDown class="history-select-arrow" :size="17" :stroke-width="2.1" aria-hidden="true" />
+          </button>
+          <div v-if="historyMenuOpen" class="history-options" role="listbox">
+            <button
+              v-for="item in sessionHistory"
+              :key="item.sessionId"
+              class="history-option"
+              :class="{ active: item.sessionId === selectedSessionId }"
+              type="button"
+              role="option"
+              :aria-selected="item.sessionId === selectedSessionId"
+              @click="handleHistoryOptionSelect(item.sessionId)"
+            >
+              {{ buildSessionOptionLabel(item) }}
+            </button>
+          </div>
+        </div>
+        <button
+          class="history-refresh-btn"
+          :class="{ loading: loadingSessionHistory }"
+          type="button"
+          :disabled="loadingSessionHistory"
+          :title="historyRefreshText"
+          aria-label="刷新历史"
+          :aria-busy="loadingSessionHistory"
+          @click="handleRefreshSessionHistory"
+        >
+          <RefreshCw :size="16" :stroke-width="1.9" aria-hidden="true" />
+        </button>
+        <span
+          class="interview-status-pill"
+          :class="{
+            active: sessionStarted && !sessionFinished && remainingSeconds > 0,
+            finished: sessionFinished || remainingSeconds === 0,
+          }"
+        >
+          <span class="interview-status-dot" aria-hidden="true" />
+          {{ interviewStatusText }}
+        </span>
+      </div>
+    </header>
+
+    <div class="interview-layout">
+      <div class="workspace">
+        <InterviewSimulationPanel
+          :mode="mode"
+          :messages="messages"
+          :is-loading="isLoading"
+          :error-msg="errorMsg"
+          :input-text="inputText"
+          :can-send="canSend"
+          :is-listening="isListening"
+          :request-state="requestState"
+          :request-status-text="requestStatusText"
+          :composer-hint-text="composerHintText"
+          :streaming-assistant-message-id="streamingAssistantMessageId"
+          :session-started="sessionStarted"
+          :can-toggle-voice="canToggleVoice"
+          :session-finished="sessionFinished"
+          :speech-state="speechUiState"
+          @update:input-text="inputText = $event"
+          @send="handleSend"
+          @toggle-voice="handleToggleVoice"
+        />
+
+        <ResumePreviewOverlay v-if="showResumePreview" @close="showResumePreview = false" />
+      </div>
+    </div>
+
+    <button
+      v-if="!sessionStarted"
+      class="session-start-fab"
+      type="button"
+      :disabled="isLoading"
+      @click="handleStart"
+    >
+      <Play :size="20" :stroke-width="2" aria-hidden="true" />
+      {{ isLoading ? '正在启动...' : '开始面试' }}
+    </button>
+
+    <div
+      v-else
+      class="session-timer-fab"
+      :class="{ running: timerRunning, finished: sessionFinished || remainingSeconds === 0 }"
+      role="timer"
+      aria-live="polite"
+    >
+      <span class="session-timer-dot" aria-hidden="true" />
+      <Timer :size="16" :stroke-width="1.9" aria-hidden="true" />
+      <strong>{{ timerText }}</strong>
+      <span>{{ timerStatusText }}</span>
     </div>
 
     <AiConfigDialog v-if="showAiConfig" @close="showAiConfig = false" />
@@ -1044,74 +1018,184 @@ onUnmounted(() => {
   min-width: 0;
   height: 100%;
   overflow: hidden;
-  padding: 16px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: linear-gradient(145deg, #f7f2ec 0%, #f1e5d8 100%);
+  background: var(--app-background);
 }
 
-.topbar {
-  border: 1px solid #e4d8cb;
-  border-radius: 12px;
-  background: #fff;
-  padding: 10px 12px;
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) 34px auto;
+.interview-hero {
+  position: relative;
+  z-index: 30;
+  flex: 0 0 auto;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 58px;
+  border: 1px solid var(--border-control);
+  border-radius: 24px;
+  background: var(--surface-translucent);
+  padding: 10px 12px;
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(18px);
+  overflow: visible;
+}
+
+.interview-hero-tools {
+  margin-left: auto;
+  max-width: 690px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 520px;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.history-field {
+  position: relative;
+  z-index: 35;
+  min-width: 218px;
+  max-width: 360px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 260px;
+  gap: 8px;
+  border: 1px solid var(--border-control);
+  border-radius: 999px;
+  background: var(--surface-glass);
+  color: var(--text-secondary);
+  padding: 0 12px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+.history-field:focus-within {
+  border-color: var(--primary-500);
+  background: var(--surface-base);
+  box-shadow: 0 0 0 4px var(--theme-focus-ring);
 }
 
 .history-select {
   width: 100%;
   min-width: 0;
-  height: 34px;
-  border: 1px solid #dfd2c2;
-  border-radius: 8px;
-  background: #fff;
-  color: #5f5448;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
   font-size: 12px;
-  padding: 0 8px;
+  font-weight: 560;
+  outline: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
 }
 
 .history-select:disabled {
   opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.history-select-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-select-arrow {
+  flex: 0 0 17px;
+  width: 17px;
+  height: 17px;
+  color: var(--gray-700);
+  transform-origin: center;
+  transition: color 0.18s ease, transform 0.18s ease;
+}
+
+.history-select[aria-expanded='true'] .history-select-arrow {
+  color: var(--primary-500);
+  transform: rotate(180deg);
+}
+
+.history-options {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 50;
+  width: min(360px, calc(100vw - 36px));
+  max-height: min(260px, 48vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid var(--border-control);
+  border-radius: 16px;
+  background: var(--surface-glass-strong);
+  box-shadow: var(--shadow-dialog);
+  padding: 6px;
+}
+
+.history-option {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.35;
+  text-align: left;
+  padding: 7px 9px;
+  cursor: pointer;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.history-option:hover,
+.history-option.active {
+  background: var(--primary-50);
+  color: var(--primary-500);
 }
 
 .history-refresh-btn {
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   padding: 0;
-  border-radius: 9px;
-  border: 1px solid #ddd2c6;
-  background: #f7f3ee;
-  color: #5f5448;
+  border-radius: 999px;
+  border: 1px solid var(--border-control);
+  background: var(--surface-glass);
+  color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
 }
 
 .history-refresh-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: #d97745;
-  color: #d97745;
+  border-color: var(--primary-500);
+  background: var(--surface-base);
+  color: var(--primary-500);
+  box-shadow: var(--shadow-brand);
 }
 
 .history-refresh-btn:disabled {
   opacity: 0.72;
   cursor: not-allowed;
-}
-
-.history-refresh-btn svg {
-  width: 17px;
-  height: 17px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .history-refresh-btn.loading svg {
@@ -1126,31 +1210,31 @@ onUnmounted(() => {
 
 .interview-status-pill {
   min-width: 90px;
-  height: 34px;
+  height: 38px;
   border-radius: 999px;
-  border: 1px solid #ded4c8;
-  background: #f6f1ea;
-  color: #6d6054;
+  border: 1px solid var(--border-control);
+  background: var(--surface-glass);
+  color: var(--text-secondary);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 0 12px;
+  padding: 0 13px;
   white-space: nowrap;
 }
 
 .interview-status-pill.active {
-  border-color: #cbe5d0;
-  background: #edf8f0;
-  color: #2b7a45;
+  border-color: var(--border-success);
+  background: var(--accent-green-soft);
+  color: var(--text-success);
 }
 
 .interview-status-pill.finished {
-  border-color: #efd2c4;
-  background: #fff1ec;
-  color: #b74a30;
+  border-color: color-mix(in srgb, var(--accent-orange) 28%, transparent);
+  background: var(--accent-orange-soft);
+  color: var(--accent-orange);
 }
 
 .interview-status-dot {
@@ -1162,37 +1246,256 @@ onUnmounted(() => {
 }
 
 .final-banner {
-  border-radius: 9px;
-  border: 1px solid #d8d0c4;
-  background: #f7f3ed;
-  color: #5f5448;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.final-score-chip,
+.final-result-chip,
+.final-type-chip {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border-success);
+  border-radius: 999px;
+  background: var(--accent-green-soft);
+  color: var(--text-success);
   font-size: 12px;
-  font-weight: 600;
-  padding: 8px 10px;
+  font-weight: 650;
+  padding: 0 10px;
+  white-space: nowrap;
 }
 
-.final-banner.pass {
-  border-color: #c8e6cf;
-  background: #eef8f1;
-  color: #2b7a45;
+.final-score-chip svg,
+.final-result-chip svg,
+.final-type-chip svg {
+  color: var(--text-success);
 }
 
-.final-banner.fail {
-  border-color: #f0d2c8;
-  background: #fff1ec;
-  color: #b74a30;
+.final-banner.fail .final-score-chip,
+.final-banner.fail .final-result-chip,
+.final-banner.fail .final-type-chip {
+  border-color: color-mix(in srgb, var(--accent-orange) 28%, transparent);
+  background: var(--accent-orange-soft);
+  color: var(--text-warning);
+}
+
+.final-banner.fail .final-score-chip svg,
+.final-banner.fail .final-result-chip svg,
+.final-banner.fail .final-type-chip svg {
+  color: var(--text-warning);
+}
+
+.interview-layout {
+  position: relative;
+  z-index: 10;
+  flex: 1;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 224px;
+  gap: 12px;
 }
 
 .workspace {
   position: relative;
-  flex: 1;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
   display: flex;
+  overflow: hidden;
 }
 
 .workspace > :first-child {
-  flex: 1;
+  flex: 1 1 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
+}
+
+.interview-dock {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dock-card {
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  background: var(--surface-raised);
+  padding: 12px;
+  box-shadow: var(--shadow-lg);
+}
+
+.dock-card.dark-card {
+  border-color: var(--primary-200);
+  background: var(--primary-50);
+  color: var(--text-primary);
+}
+
+.dock-card-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.dock-icon {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 15px;
+  background: var(--surface-base);
+  color: var(--primary-500);
+}
+
+.dock-icon svg,
+.dock-mode-btn svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dock-card strong,
+.dock-card h2 {
+  display: block;
+  margin: 0;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.dock-card span,
+.dock-card p {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.dock-card .dock-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0;
+  color: var(--primary-500);
+}
+
+.dock-card:not(.dark-card) h2 {
+  color: var(--text-primary);
+}
+
+.dock-primary-btn {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 12px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--primary-500);
+  color: var(--text-inverse);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dock-primary-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.dock-mode-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.dock-mode-btn {
+  min-height: 36px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  color: var(--gray-600);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dock-mode-btn.active,
+.dock-mode-btn:hover {
+  border-color: var(--primary-500);
+  background: var(--primary-50);
+  color: var(--primary-500);
+}
+
+.dock-timer {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr 1fr;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.dock-timer button,
+.dock-timer strong,
+.dock-actions button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dock-timer button,
+.dock-actions button {
+  border: 1px solid var(--border-color);
+  background: var(--surface-soft);
+  color: var(--gray-600);
+  cursor: pointer;
+}
+
+.dock-timer strong {
+  border: 1px solid var(--border-color);
+  background: var(--surface-base);
+  color: var(--text-primary);
+}
+
+.dock-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dock-actions .danger {
+  border-color: var(--primary-500);
+  background: var(--primary-500);
+  color: var(--text-inverse);
+}
+
+.dock-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .interview-floating-tools {
@@ -1219,34 +1522,34 @@ onUnmounted(() => {
   height: 52px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid #2d2521;
-  background: #2d2521;
-  color: #fff;
+  border: 1px solid var(--primary-500);
+  background: var(--primary-500);
+  color: var(--text-inverse);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 12px 22px rgba(45, 37, 33, 0.24);
+  box-shadow: var(--shadow-brand);
   transition: transform 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
 }
 
 .floating-action-btn:hover,
 .floating-action-btn.active {
   transform: translateY(-1px);
-  border-color: #d97745;
-  background: #d97745;
-  box-shadow: 0 16px 28px rgba(217, 119, 69, 0.28);
+  border-color: var(--primary-500);
+  background: var(--primary-500);
+  box-shadow: var(--shadow-brand);
 }
 
 .console-action-btn {
-  background: #2d2521;
-  border-color: #2d2521;
+  background: var(--primary-500);
+  border-color: var(--primary-500);
 }
 
 .console-action-btn:hover,
 .console-action-btn.active {
-  background: #d97745;
-  border-color: #d97745;
+  background: var(--primary-500);
+  border-color: var(--primary-500);
 }
 
 .floating-action-btn svg {
@@ -1266,16 +1569,16 @@ onUnmounted(() => {
   width: min(360px, calc(100vw - 112px));
   max-height: min(72dvh, 520px);
   overflow: auto;
-  border: 1px solid #e1d4c6;
+  border: 1px solid var(--border-color);
   border-radius: 18px;
-  background: rgba(255, 252, 248, 0.98);
-  box-shadow: 0 22px 54px rgba(45, 37, 33, 0.2);
+  background: var(--surface-glass-strong);
+  box-shadow: var(--shadow-floating);
   padding: 14px;
   backdrop-filter: blur(14px);
 }
 
 .floating-popover-title {
-  color: #2d2521;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 800;
 }
@@ -1293,9 +1596,9 @@ onUnmounted(() => {
 .mode-option-btn {
   min-height: 40px;
   border-radius: 12px;
-  border: 1px solid #dfd2c2;
-  background: #fff;
-  color: #5f5448;
+  border: 1px solid var(--border-color);
+  background: var(--surface-base);
+  color: var(--gray-600);
   font-size: 12px;
   font-weight: 800;
   line-height: 1.35;
@@ -1305,9 +1608,9 @@ onUnmounted(() => {
 }
 
 .mode-option-btn.active {
-  border-color: #2d2521;
-  background: #2d2521;
-  color: #fff;
+  border-color: var(--primary-500);
+  background: var(--primary-500);
+  color: var(--text-inverse);
 }
 
 .controls-popover {
@@ -1323,7 +1626,7 @@ onUnmounted(() => {
 
 .console-helper {
   margin-top: 4px;
-  color: #8a7461;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -1331,15 +1634,15 @@ onUnmounted(() => {
   flex: 0 0 auto;
   border-radius: 999px;
   padding: 5px 10px;
-  background: #f0ece6;
-  color: #7f7162;
+  background: var(--surface-soft);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 800;
 }
 
 .console-status-pill.active {
-  background: #eaf7ed;
-  color: #2b7a45;
+  background: var(--accent-green-soft);
+  color: var(--text-success);
 }
 
 .console-timer-row {
@@ -1351,7 +1654,7 @@ onUnmounted(() => {
 }
 
 .console-label {
-  color: #7c7062;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
 }
@@ -1370,16 +1673,16 @@ onUnmounted(() => {
 
 .console-mini-btn,
 .console-btn {
-  border: 1px solid #dfd2c2;
-  background: #f7f3ee;
-  color: #5f5448;
+  border: 1px solid var(--border-color);
+  background: var(--surface-soft);
+  color: var(--gray-600);
   cursor: pointer;
 }
 
 .console-timer-value {
-  border: 1px solid #dfd2c2;
-  background: #fff;
-  color: #2d2521;
+  border: 1px solid var(--border-color);
+  background: var(--surface-base);
+  color: var(--text-primary);
 }
 
 .console-action-grid {
@@ -1390,19 +1693,19 @@ onUnmounted(() => {
 }
 
 .console-btn.primary {
-  border-color: #2d2521;
-  background: #2d2521;
-  color: #fff;
+  border-color: var(--primary-500);
+  background: var(--primary-500);
+  color: var(--text-inverse);
 }
 
 .console-btn.danger {
-  border-color: #d97745;
-  background: #d97745;
-  color: #fff;
+  border-color: var(--primary-500);
+  background: var(--primary-500);
+  color: var(--text-inverse);
 }
 
 .console-btn.ghost {
-  background: #fff;
+  background: var(--surface-base);
 }
 
 .console-finish-btn {
@@ -1416,6 +1719,12 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
+@media (min-width: 861px) {
+  .interview-floating-tools {
+    display: none;
+  }
+}
+
 @media (max-width: 860px) {
   .ai-interviewer-panel {
     padding: 10px;
@@ -1424,44 +1733,105 @@ onUnmounted(() => {
     overflow-x: hidden;
   }
 
-  .topbar {
-    grid-template-columns: minmax(0, 1fr) 36px auto;
-    padding: 8px;
+  .interview-hero {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .interview-hero-tools {
+    width: 100%;
+    max-width: none;
+    flex: 0 0 auto;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .history-field {
+    max-width: none;
+    flex: 1 1 260px;
+  }
+
+  .interview-layout {
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+  }
+
+  .interview-dock {
+    display: none;
   }
 }
 
 @media (max-width: 600px) {
   .ai-interviewer-panel {
-    padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+    padding: 20px 12px calc(10px + env(safe-area-inset-bottom));
     overflow: hidden;
+    background: var(--app-background);
   }
 
-  .topbar {
-    grid-template-columns: 32px minmax(0, 1fr);
-    gap: 5px;
-    padding: 6px;
-    border-radius: 9px;
-    overflow: hidden;
+  .interview-hero {
+    min-height: 0;
+    border-radius: 20px;
+    padding: 10px;
   }
 
-  .history-select {
+  .interview-hero-tools {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .history-field {
     grid-column: 1 / -1;
     width: 100%;
     min-width: 0;
-    height: 32px;
+    height: 30px;
+    gap: 6px;
+    padding: 0 8px;
+  }
+
+  .history-select {
+    height: 28px;
+    font-size: 12px;
     text-overflow: ellipsis;
-    padding: 0 7px;
+  }
+
+  .history-select-arrow {
+    flex-basis: 15px;
+    width: 15px;
+    height: 15px;
+  }
+
+  .history-options {
+    top: calc(100% + 5px);
+    width: 100%;
+    max-height: 210px;
+    border-radius: 13px;
+    padding: 5px;
+  }
+
+  .history-option {
+    min-height: 30px;
+    border-radius: 9px;
+    font-size: 12px;
+    line-height: 1.28;
+    padding: 6px 8px;
   }
 
   .history-refresh-btn {
-    width: 32px;
+    width: 30px;
     height: 30px;
-    border-radius: 8px;
   }
 
   .history-refresh-btn svg {
-    width: 15px;
-    height: 15px;
+    width: 14px;
+    height: 14px;
   }
 
   .interview-status-pill {
@@ -1470,7 +1840,7 @@ onUnmounted(() => {
     height: 30px;
     font-size: 10.5px;
     gap: 5px;
-    padding: 0 7px;
+    padding: 0 8px;
   }
 
   .interview-status-dot {
@@ -1479,19 +1849,34 @@ onUnmounted(() => {
   }
 
   .final-banner {
-    padding: 6px 8px;
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
+  }
+
+  .final-score-chip,
+  .final-result-chip,
+  .final-type-chip {
+    min-height: 30px;
     font-size: 11px;
-    line-height: 1.5;
+    padding: 0 8px;
   }
 
   .workspace {
     flex: 1 1 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     display: flex;
     min-height: 0;
+    overflow: hidden;
   }
 
   .workspace > :first-child {
-    flex: 1;
+    flex: 1 1 0;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     min-height: 0;
   }
 
@@ -1568,3 +1953,4 @@ onUnmounted(() => {
   }
 }
 </style>
+<style scoped src="./AiInterviewerPanel.chatgpt.css"></style>

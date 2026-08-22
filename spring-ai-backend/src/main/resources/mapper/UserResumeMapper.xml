@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- author: jf -->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.resumebuilder.springaibackend.mapper.UserResumeMapper">
+
+    <sql id="resumeSummaryColumns">
+        resume_id AS resumeId,
+        user_id AS userId,
+        resume_name AS resumeName,
+        is_active AS active,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+    </sql>
+
+    <sql id="resumeDetailColumns">
+        <include refid="resumeSummaryColumns" />,
+        JSON_UNQUOTE(JSON_EXTRACT(resume_data_json, '$')) AS resumeDataJson
+    </sql>
+
+    <select id="lockUser" resultType="string">
+        SELECT user_id
+        FROM auth_users
+        WHERE user_id = #{userId}
+        FOR UPDATE
+    </select>
+
+    <select id="selectByUserId" resultType="com.resumebuilder.springaibackend.entity.UserResumeEntity">
+        SELECT <include refid="resumeSummaryColumns" />
+        FROM user_resumes
+        WHERE user_id = #{userId}
+        ORDER BY is_active DESC, updated_at DESC, created_at DESC
+    </select>
+
+    <select id="selectOwnedById" resultType="com.resumebuilder.springaibackend.entity.UserResumeEntity">
+        SELECT <include refid="resumeDetailColumns" />
+        FROM user_resumes
+        WHERE user_id = #{userId}
+          AND resume_id = #{resumeId}
+        LIMIT 1
+    </select>
+
+    <select id="countByUserId" resultType="int">
+        SELECT COUNT(*)
+        FROM user_resumes
+        WHERE user_id = #{userId}
+    </select>
+
+    <insert id="insert" parameterType="com.resumebuilder.springaibackend.entity.UserResumeEntity">
+        INSERT INTO user_resumes (
+            resume_id,
+            user_id,
+            resume_name,
+            resume_data_json,
+            is_active
+        ) VALUES (
+            #{resumeId},
+            #{userId},
+            #{resumeName},
+            CAST(#{resumeDataJson} AS JSON),
+            #{active}
+        )
+    </insert>
+
+    <update id="updateOwned" parameterType="com.resumebuilder.springaibackend.entity.UserResumeEntity">
+        UPDATE user_resumes
+        SET resume_name = #{resumeName},
+            resume_data_json = CAST(#{resumeDataJson} AS JSON),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = #{userId}
+          AND resume_id = #{resumeId}
+    </update>
+
+    <update id="deactivateAll">
+        UPDATE user_resumes
+        SET is_active = 0
+        WHERE user_id = #{userId}
+          AND is_active = 1
+    </update>
+
+    <update id="activateOwned">
+        UPDATE user_resumes
+        SET is_active = 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = #{userId}
+          AND resume_id = #{resumeId}
+    </update>
+
+    <delete id="deleteOwned">
+        DELETE FROM user_resumes
+        WHERE user_id = #{userId}
+          AND resume_id = #{resumeId}
+    </delete>
+</mapper>

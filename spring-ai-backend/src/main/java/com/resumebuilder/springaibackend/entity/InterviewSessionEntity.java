@@ -1,3 +1,4 @@
+// author: jf
 package com.resumebuilder.springaibackend.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -11,6 +12,9 @@ public class InterviewSessionEntity {
 
     @TableId(value = "session_id", type = IdType.INPUT)
     private String sessionId;
+
+    @TableField("user_id")
+    private String userId;
 
     @TableField("mode")
     private String mode;
@@ -51,6 +55,14 @@ public class InterviewSessionEntity {
 
     public void setSessionId(String sessionId) {
         this.sessionId = sessionId;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
     }
 
     public String getMode() {
