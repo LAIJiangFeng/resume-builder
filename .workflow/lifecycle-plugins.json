@@ -1,0 +1,578 @@
+{
+  "$schema": "./lifecycle-plugins.schema.json",
+  "author": "jf",
+  "version": 1,
+  "selection": {
+    "maxAutomaticPluginsPerHook": 2,
+    "explicitPluginsBypassAutomaticLimit": true,
+    "defaultUnavailablePolicy": "fallback_or_skip",
+    "contextMode": "minimal",
+    "evidenceMode": "summary_only"
+  },
+  "hooks": [
+    {
+      "id": "brainstorm.context",
+      "phase": "brainstorm",
+      "description": "补充仓库外部或远程协作上下文"
+    },
+    {
+      "id": "brainstorm.research",
+      "phase": "brainstorm",
+      "description": "按需调研最新外部事实"
+    },
+    {
+      "id": "brainstorm.enrich",
+      "phase": "brainstorm",
+      "description": "按领域能力补充需求梳理"
+    },
+    {
+      "id": "prd.enrich",
+      "phase": "prd",
+      "description": "按需补充 PRD 的专业约束"
+    },
+    {
+      "id": "ui.design",
+      "phase": "ui",
+      "description": "生成或校准可选 UI 初步设计"
+    },
+    {
+      "id": "implement.support",
+      "phase": "implement",
+      "description": "为实现阶段提供领域或组件支持"
+    },
+    {
+      "id": "break_loop.analyze",
+      "phase": "break_loop",
+      "description": "按需增强 Bug 根因与预防机制分析"
+    },
+    {
+      "id": "quality_gate.verify",
+      "phase": "quality_gate",
+      "description": "提供运行时、浏览器或外部质量证据"
+    },
+    {
+      "id": "submit.review",
+      "phase": "submit",
+      "description": "在用户选择后执行代码审查"
+    },
+    {
+      "id": "submit.review_fix",
+      "phase": "submit",
+      "description": "在用户授权后修复审查问题"
+    },
+    {
+      "id": "submit.remote",
+      "phase": "submit",
+      "description": "在用户授权后补充远程 PR 或 Issue 上下文"
+    },
+    {
+      "id": "archive.preference",
+      "phase": "archive",
+      "description": "仅在用户明确要求时记录个人长期偏好"
+    }
+  ],
+  "plugins": [
+    {
+      "id": "mcp.github",
+      "kind": "mcp",
+      "provider": "github",
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 90,
+      "description": "读取 GitHub Issue、PR、Review 和远程协作上下文",
+      "hooks": [
+        {
+          "point": "brainstorm.context",
+          "when": {
+            "anyTags": ["github", "issue", "pr", "remote"]
+          }
+        },
+        {
+          "point": "submit.remote",
+          "when": {
+            "anyTags": ["github", "issue", "pr", "remote"],
+            "requiresAuthorization": true
+          }
+        }
+      ],
+      "fallback": {
+        "type": "command",
+        "value": "git 或 gh CLI"
+      }
+    },
+    {
+      "id": "mcp.tavily",
+      "kind": "mcp",
+      "provider": "tavily",
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 70,
+      "description": "检索需要时效性的外部资料",
+      "hooks": [
+        {
+          "point": "brainstorm.research",
+          "when": {
+            "anyTags": ["external-research", "latest", "web-research"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "manual",
+        "value": "使用可靠官方资料或明确记录未验证"
+      }
+    },
+    {
+      "id": "mcp.pencil",
+      "kind": "mcp",
+      "provider": "pencil",
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 90,
+      "description": "处理 Pencil 设计稿和结构化视觉资产",
+      "hooks": [
+        {
+          "point": "ui.design",
+          "when": {
+            "anyTags": ["pencil", "pen", "ui-design", "visual-design"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "plugin",
+        "value": "skill.modern-web-ui-designer"
+      }
+    },
+    {
+      "id": "mcp.stitch",
+      "kind": "mcp",
+      "provider": "stitch",
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 80,
+      "description": "生成或迭代 UI 原型",
+      "hooks": [
+        {
+          "point": "ui.design",
+          "when": {
+            "anyTags": ["stitch", "ui-prototype", "ui-design"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "plugin",
+        "value": "skill.modern-web-ui-designer"
+      }
+    },
+    {
+      "id": "mcp.shadcn",
+      "kind": "mcp",
+      "provider": "shadcn",
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 70,
+      "description": "查询或选择 Shadcn 组件能力",
+      "hooks": [
+        {
+          "point": "ui.design",
+          "when": {
+            "anyTags": ["shadcn", "component-library"]
+          }
+        },
+        {
+          "point": "implement.support",
+          "when": {
+            "anyTags": ["shadcn", "component-library"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "manual",
+        "value": "复用仓库现有组件"
+      }
+    },
+    {
+      "id": "mcp.playwright",
+      "kind": "mcp",
+      "provider": "playwright",
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 90,
+      "description": "提供前端页面和交互运行证据",
+      "hooks": [
+        {
+          "point": "quality_gate.verify",
+          "when": {
+            "anyTags": ["frontend", "ui", "interaction", "browser"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "manual",
+        "value": "使用其他浏览器工具或人工交互验证"
+      }
+    },
+    {
+      "id": "mcp.node-repl",
+      "kind": "mcp",
+      "provider": "node_repl",
+      "enabled": true,
+      "activation": "manual",
+      "priority": 60,
+      "description": "按需提供浏览器或 Node 运行时控制",
+      "hooks": [
+        {
+          "point": "quality_gate.verify",
+          "when": {
+            "anyTags": ["node", "browser", "runtime"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "manual",
+        "value": "使用现有命令或人工验证"
+      }
+    },
+    {
+      "id": "mcp.memory",
+      "kind": "mcp",
+      "provider": "memory",
+      "enabled": true,
+      "activation": "manual",
+      "priority": 40,
+      "description": "仅保存用户明确要求长期保留的个人偏好",
+      "hooks": [
+        {
+          "point": "archive.preference",
+          "when": {
+            "anyTags": ["personal-preference", "remember"],
+            "requiresAuthorization": true
+          }
+        }
+      ],
+      "fallback": {
+        "type": "none",
+        "value": null
+      }
+    },
+    {
+      "id": "mcp.figma",
+      "kind": "mcp",
+      "provider": "figma",
+      "enabled": false,
+      "activation": "manual",
+      "priority": 80,
+      "description": "读取或协作 Figma 设计上下文，默认关闭",
+      "hooks": [
+        {
+          "point": "ui.design",
+          "when": {
+            "anyTags": ["figma", "ui-design"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "plugin",
+        "value": "skill.modern-web-ui-designer"
+      }
+    },
+    {
+      "id": "skill.openai-docs",
+      "kind": "skill",
+      "provider": "openai-docs",
+      "source": "runtime",
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 100,
+      "description": "查询 OpenAI 官方产品和 API 文档",
+      "hooks": [
+        {
+          "point": "brainstorm.research",
+          "when": {
+            "anyTags": ["openai", "openai-api", "model-api", "realtime", "official-docs"]
+          }
+        },
+        {
+          "point": "implement.support",
+          "when": {
+            "anyTags": ["openai", "openai-api", "model-api", "realtime"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "manual",
+        "value": "使用 OpenAI 官方文档并记录来源"
+      }
+    },
+    {
+      "id": "skill.ui-ux-pro-max",
+      "kind": "skill",
+      "provider": "ui-ux-pro-max",
+      "source": "runtime",
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 95,
+      "description": "按需提供 UI/UX 设计系统与体验校准建议",
+      "hooks": [
+        {
+          "point": "ui.design",
+          "when": {
+            "anyTags": ["ui-ux-pro-max", "ux-audit", "design-system"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "plugin",
+        "value": "skill.modern-web-ui-designer"
+      }
+    },
+    {
+      "id": "skill.frontend-design",
+      "kind": "skill",
+      "provider": "frontend-design",
+      "source": "runtime",
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 90,
+      "description": "按需生成生产级前端页面与组件设计",
+      "hooks": [
+        {
+          "point": "ui.design",
+          "when": {
+            "anyTags": ["frontend-design", "landing-page", "page-build"]
+          }
+        },
+        {
+          "point": "implement.support",
+          "when": {
+            "anyTags": ["frontend-design", "landing-page", "page-build"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "plugin",
+        "value": "skill.modern-web-ui-designer"
+      }
+    },
+    {
+      "id": "skill.quality-test",
+      "kind": "skill",
+      "provider": "quality-test",
+      "source": "runtime",
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 95,
+      "description": "按需执行交互式用户验收与差距闭环",
+      "hooks": [
+        {
+          "point": "quality_gate.verify",
+          "when": {
+            "anyTags": ["uat", "interactive-verification", "acceptance-test"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "manual",
+        "value": "按 testing.md 完成人工验收并记录证据"
+      }
+    },
+    {
+      "id": "skill.modern-web-ui-designer",
+      "kind": "skill",
+      "provider": "modern-web-ui-designer",
+      "source": "project",
+      "entry": ".codex/skills/modern-web-ui-designer/SKILL.md",
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 100,
+      "description": "观察现有产品风格并完成 UI 初步设计或重设计",
+      "hooks": [
+        {
+          "point": "ui.design",
+          "when": {
+            "anyTags": ["ui", "ui-design", "redesign", "visual-design"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "manual",
+        "value": "基于现有设计系统完成设计"
+      }
+    },
+    {
+      "id": "skill.resume-template-from-image",
+      "kind": "skill",
+      "provider": "resume-template-from-image",
+      "source": "project",
+      "entry": ".codex/skills/resume-template-from-image/SKILL.md",
+      "fallbackEntries": [
+        ".agents/skills/resume-template-from-image/SKILL.md"
+      ],
+      "enabled": true,
+      "activation": "conditional",
+      "priority": 100,
+      "description": "根据图片生成符合项目规范的简历模板",
+      "hooks": [
+        {
+          "point": "ui.design",
+          "when": {
+            "allTags": ["resume-template", "image"]
+          }
+        },
+        {
+          "point": "implement.support",
+          "when": {
+            "allTags": ["resume-template", "image"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "manual",
+        "value": "按 frontend.md 中的模板规范实现"
+      }
+    },
+    {
+      "id": "skill.code-review",
+      "kind": "skill",
+      "provider": "code-review",
+      "source": "project",
+      "entry": ".codex/skills/code-review/SKILL.md",
+      "fallbackEntries": [
+        ".agents/skills/code-review/SKILL.md"
+      ],
+      "enabled": true,
+      "activation": "manual",
+      "priority": 100,
+      "description": "按用户选择执行代码审查",
+      "hooks": [
+        {
+          "point": "submit.review",
+          "when": {
+            "anyTags": ["review", "code-review"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "manual",
+        "value": "直接按 code-review.md 审查"
+      }
+    },
+    {
+      "id": "skill.code-review-fix",
+      "kind": "skill",
+      "provider": "code-review-fix",
+      "source": "project",
+      "entry": ".codex/skills/code-review-fix/SKILL.md",
+      "fallbackEntries": [
+        ".agents/skills/code-review-fix/SKILL.md"
+      ],
+      "enabled": true,
+      "activation": "manual",
+      "priority": 100,
+      "description": "在用户授权后修复本地代码审查问题",
+      "hooks": [
+        {
+          "point": "submit.review_fix",
+          "when": {
+            "anyTags": ["review-fix", "code-review-fix"],
+            "requiresAuthorization": true
+          }
+        }
+      ],
+      "fallback": {
+        "type": "manual",
+        "value": "按授权范围直接修复并重跑 Quality Gate"
+      }
+    },
+    {
+      "id": "skill.pr-review-fix",
+      "kind": "skill",
+      "provider": "pr-review-fix",
+      "source": "project",
+      "entry": ".codex/skills/pr-review-fix/SKILL.md",
+      "fallbackEntries": [
+        ".agents/skills/pr-review-fix/SKILL.md"
+      ],
+      "enabled": true,
+      "activation": "manual",
+      "priority": 95,
+      "description": "在用户授权后修复 PR 审查问题",
+      "hooks": [
+        {
+          "point": "submit.review_fix",
+          "when": {
+            "allTags": ["pr", "review-fix"],
+            "requiresAuthorization": true
+          }
+        }
+      ],
+      "fallback": {
+        "type": "manual",
+        "value": "读取 PR 审查证据后按授权范围直接修复"
+      }
+    },
+    {
+      "id": "skill.resume-backend-project-optimizer",
+      "kind": "skill",
+      "provider": "resume-backend-project-optimizer",
+      "source": "project",
+      "entry": ".codex/skills/resume-backend-project-optimizer/SKILL.md",
+      "fallbackEntries": [
+        ".agents/skills/resume-backend-project-optimizer/SKILL.md"
+      ],
+      "enabled": true,
+      "activation": "manual",
+      "priority": 80,
+      "description": "按需优化中文后端项目经历",
+      "hooks": [
+        {
+          "point": "brainstorm.enrich",
+          "when": {
+            "anyTags": ["resume-project", "backend-resume"]
+          }
+        },
+        {
+          "point": "prd.enrich",
+          "when": {
+            "anyTags": ["resume-project", "backend-resume"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "none",
+        "value": null
+      }
+    },
+    {
+      "id": "skill.resume-interview-coach",
+      "kind": "skill",
+      "provider": "resume-interview-coach",
+      "source": "project",
+      "entry": ".codex/skills/resume-interview-coach/SKILL.md",
+      "fallbackEntries": [
+        ".agents/skills/resume-interview-coach/SKILL.md"
+      ],
+      "enabled": true,
+      "activation": "manual",
+      "priority": 80,
+      "description": "按需进行后端面试追问和回答梳理",
+      "hooks": [
+        {
+          "point": "brainstorm.enrich",
+          "when": {
+            "anyTags": ["interview-coaching", "resume-interview"]
+          }
+        },
+        {
+          "point": "prd.enrich",
+          "when": {
+            "anyTags": ["interview-coaching", "resume-interview"]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "none",
+        "value": null
+      }
+    }
+  ]
+}

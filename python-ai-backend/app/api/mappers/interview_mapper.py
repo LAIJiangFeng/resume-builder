@@ -11,8 +11,9 @@ def _history_item_to_dto(item: InterviewHistoryItem) -> InterviewHistoryItemDto:
     )
 
 
-def interview_turn_request_to_dto(request: InterviewTurnRequest) -> InterviewTurnRequestDto:
+def interview_turn_request_to_dto(request: InterviewTurnRequest, user_id: str) -> InterviewTurnRequestDto:
     return InterviewTurnRequestDto(
+        user_id=user_id,
         mode=request.mode,
         command=request.command,
         user_input=request.userInput,

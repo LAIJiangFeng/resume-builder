@@ -388,8 +388,8 @@ function removeAvatar() {
 .avatar-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0,0,0,0.45);
-  color: white;
+  background: var(--overlay-backdrop-strong);
+  color: var(--text-on-overlay);
   display: flex;
   align-items: center;
   justify-content: center;

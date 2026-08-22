@@ -71,6 +71,7 @@ def _new_session_record(session_id: str, request: InterviewTurnRequestDto, now_i
     ]
     return {
         "sessionId": session_id,
+        "userId": request.user_id,
         "mode": "interviewer" if request.mode == "interviewer" else "candidate",
         "status": "active",
         "durationMinutes": max(1, int(request.duration_minutes or 60)),
@@ -100,7 +101,7 @@ def persist_turn_result(
     meta = graph_output.get("meta") if isinstance(graph_output.get("meta"), dict) else {}
 
     now_iso = _now_iso()
-    session = repository.get(session_id)
+    session = repository.get(session_id, request.user_id)
     if session is None:
         session = _new_session_record(session_id=session_id, request=request, now_iso=now_iso)
     messages = _ensure_messages(session)
@@ -119,7 +120,8 @@ def persist_turn_result(
     if final_evaluation is not None:
         session["finalEvaluation"] = final_evaluation
     session["updatedAt"] = now_iso
-    repository.save(session_id, session)
+    session["userId"] = request.user_id
+    repository.save(session_id, request.user_id, session)
 
     return {
         "assistantReply": assistant_reply,
@@ -139,6 +141,7 @@ def _session_to_summary(session: dict[str, Any]) -> dict[str, Any]:
     final_evaluation = session.get("finalEvaluation")
     return {
         "sessionId": session.get("sessionId"),
+        "userId": session.get("userId"),
         "mode": session.get("mode", "candidate"),
         "status": session.get("status", "active"),
         "durationMinutes": session.get("durationMinutes", 60),
@@ -168,18 +171,25 @@ def _session_to_detail(session: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def list_interview_sessions(limit: int, repository: InterviewSessionRepository) -> list[dict[str, Any]]:
-    sessions = repository.list(limit)
+def list_interview_sessions(limit: int, user_id: str, repository: InterviewSessionRepository) -> list[dict[str, Any]]:
+    safe_user_id = str(user_id or "").strip()
+    if not safe_user_id:
+        raise HTTPException(status_code=401, detail="请先登录后再查看面试历史")
+
+    sessions = repository.list(limit, safe_user_id)
     sessions.sort(key=lambda item: str(item.get("updatedAt") or ""), reverse=True)
     return [_session_to_summary(item) for item in sessions[:limit]]
 
 
-def get_interview_session_detail(session_id: str, repository: InterviewSessionRepository) -> dict[str, Any]:
+def get_interview_session_detail(session_id: str, user_id: str, repository: InterviewSessionRepository) -> dict[str, Any]:
+    safe_user_id = str(user_id or "").strip()
     safe_session_id = session_id.strip()
+    if not safe_user_id:
+        raise HTTPException(status_code=401, detail="请先登录后再查看面试详情")
     if not safe_session_id:
         raise HTTPException(status_code=400, detail="sessionId cannot be empty")
 
-    session = repository.get(safe_session_id)
+    session = repository.get(safe_session_id, safe_user_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Interview session not found")
     return _session_to_detail(session)

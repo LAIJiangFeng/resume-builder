@@ -19,6 +19,7 @@
     "@inspira-ui/plugins": "^0.0.2",
     "@vueuse/core": "^14.3.0",
     "html2pdf.js": "^0.14.0",
+    "lucide-vue-next": "^0.577.0",
     "markdown-it": "^14.1.1",
     "motion-v": "^2.2.1",
     "pinia": "^3.0.4",

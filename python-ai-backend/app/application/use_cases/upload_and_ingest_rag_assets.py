@@ -1,6 +1,8 @@
 # author: jf
+from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
+from typing import Any
 from uuid import uuid4
 
 from app.application.dto.rag_dto import RagUploadAssetDto, RagUploadFileResultDto, RagUploadResponseDto
@@ -25,16 +27,50 @@ from app.infrastructure.text.markdown_structure_normalizer import MarkdownStruct
 _SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md", ".docx", ".png", ".jpg", ".jpeg", ".webp"}
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 _UPLOAD_READ_CHUNK_SIZE = 1024 * 1024
+_UPLOAD_STAGE_PROGRESS = {
+    "排队": 0.0,
+    "开始": 0.08,
+    "读取": 0.16,
+    "校验": 0.25,
+    "解析": 0.38,
+    "规范化": 0.50,
+    "逻辑文档拆分": 0.60,
+    "切块": 0.72,
+    "Embedding": 0.84,
+    "入库": 0.94,
+    "完成": 1.0,
+}
+RagUploadProgressCallback = Callable[[dict[str, Any]], None]
 
 
 def upload_and_ingest_rag_assets(
     assets: list[RagUploadAssetDto],
     trace_id: str | None = None,
+    progress_callback: RagUploadProgressCallback | None = None,
 ) -> RagUploadResponseDto:
     safe_trace_id = _normalize_trace_id(trace_id)
     _log_upload(safe_trace_id, "请求", "开始处理上传请求", file_count=len(assets))
+    _emit_progress(
+        progress_callback,
+        "batch-start",
+        trace_id=safe_trace_id,
+        total_files=len(assets),
+        status="uploading",
+        stage="开始",
+        progress_percent=0,
+        message="开始处理批量上传",
+    )
 
     settings = resolve_settings()
+    _emit_progress(
+        progress_callback,
+        "batch-stage",
+        trace_id=safe_trace_id,
+        stage="校验",
+        status="uploading",
+        progress_percent=1 if assets else 0,
+        message="开始批量基础校验",
+    )
     _log_upload(
         safe_trace_id,
         "校验",
@@ -43,6 +79,15 @@ def upload_and_ingest_rag_assets(
     )
     _validate_assets(assets=assets)
     _log_upload(safe_trace_id, "校验", "批量基础校验通过")
+    _emit_progress(
+        progress_callback,
+        "batch-stage",
+        trace_id=safe_trace_id,
+        stage="初始化",
+        status="uploading",
+        progress_percent=2 if assets else 0,
+        message="校验通过，正在初始化处理依赖",
+    )
 
     # 业务意图：
     # 1) application 层统一编排文件解析、图片 OCR、切块、向量化和 pgvector 入库。
@@ -56,6 +101,15 @@ def upload_and_ingest_rag_assets(
     logical_document_splitter = build_logical_document_splitter_service()
     normalizer = MarkdownStructureNormalizer()
     _log_upload(safe_trace_id, "初始化", "依赖构建完成，进入逐文件处理")
+    _emit_progress(
+        progress_callback,
+        "batch-stage",
+        trace_id=safe_trace_id,
+        stage="处理",
+        status="uploading",
+        progress_percent=3 if assets else 0,
+        message="依赖初始化完成，进入逐文件处理",
+    )
 
     results: list[RagUploadFileResultDto] = []
     inserted = 0
@@ -71,9 +125,33 @@ def upload_and_ingest_rag_assets(
             file_name=asset.file_name,
             source_type=source_type,
         )
+        _emit_progress(
+            progress_callback,
+            "file-start",
+            trace_id=safe_trace_id,
+            file_index=index,
+            total_files=len(assets),
+            file_name=asset.file_name,
+            source_type=source_type,
+            ingest_source=fallback_ingest_source,
+            stage="读取",
+            status="uploading",
+            file_progress_percent=_file_stage_progress_percent("读取"),
+            progress_percent=_overall_file_progress_percent(index, len(assets), "读取"),
+            message="开始处理文件",
+        )
 
         stage = "读取"
         try:
+            _emit_file_stage(
+                progress_callback,
+                safe_trace_id,
+                index,
+                len(assets),
+                asset.file_name,
+                stage,
+                "正在读取文件内容",
+            )
             materialized_asset = _materialize_asset(
                 asset=asset,
                 max_file_size_mb=settings.rag_max_file_size_mb,
@@ -88,10 +166,28 @@ def upload_and_ingest_rag_assets(
             )
 
             stage = "校验"
+            _emit_file_stage(
+                progress_callback,
+                safe_trace_id,
+                index,
+                len(assets),
+                asset.file_name,
+                stage,
+                "正在校验文件格式和大小",
+            )
             _validate_asset(asset=materialized_asset, max_file_size_mb=settings.rag_max_file_size_mb)
             _log_upload(safe_trace_id, "校验", "单文件校验通过", file_name=asset.file_name)
 
             stage = "解析"
+            _emit_file_stage(
+                progress_callback,
+                safe_trace_id,
+                index,
+                len(assets),
+                asset.file_name,
+                stage,
+                "正在解析文件内容",
+            )
             extracted = _extract_document(
                 asset=materialized_asset,
                 file_parser=file_parser,
@@ -107,6 +203,15 @@ def upload_and_ingest_rag_assets(
             )
 
             stage = "规范化"
+            _emit_file_stage(
+                progress_callback,
+                safe_trace_id,
+                index,
+                len(assets),
+                asset.file_name,
+                stage,
+                "正在规范化文本结构",
+            )
             normalized_content = normalizer.normalize(extracted.content)
             if not normalized_content:
                 raise FileParseError(f"文件 {asset.file_name} 未生成可入库内容")
@@ -128,6 +233,15 @@ def upload_and_ingest_rag_assets(
             )
 
             stage = "逻辑文档拆分"
+            _emit_file_stage(
+                progress_callback,
+                safe_trace_id,
+                index,
+                len(assets),
+                asset.file_name,
+                stage,
+                "正在拆分逻辑文档",
+            )
             logical_documents = logical_document_splitter.split_document(extracted)
             if not logical_documents:
                 raise FileParseError(f"文件 {asset.file_name} 未拆分出有效 logical document")
@@ -140,6 +254,15 @@ def upload_and_ingest_rag_assets(
             )
 
             stage = "切块"
+            _emit_file_stage(
+                progress_callback,
+                safe_trace_id,
+                index,
+                len(assets),
+                asset.file_name,
+                stage,
+                "正在切分知识库 chunk",
+            )
             chunks: list[RagChunk] = []
             for logical_document in logical_documents:
                 chunks.extend(chunking_service.chunk_document(logical_document))
@@ -159,6 +282,15 @@ def upload_and_ingest_rag_assets(
             )
 
             stage = "Embedding"
+            _emit_file_stage(
+                progress_callback,
+                safe_trace_id,
+                index,
+                len(assets),
+                asset.file_name,
+                stage,
+                "正在生成 Embedding",
+            )
             embedding_started_at = perf_counter()
             _emit_embedding_timing_log(
                 trace_id=safe_trace_id,
@@ -206,6 +338,15 @@ def upload_and_ingest_rag_assets(
             )
 
             stage = "入库"
+            _emit_file_stage(
+                progress_callback,
+                safe_trace_id,
+                index,
+                len(assets),
+                asset.file_name,
+                stage,
+                "正在写入 pgvector",
+            )
             _log_upload(
                 safe_trace_id,
                 "入库",
@@ -233,17 +374,17 @@ def upload_and_ingest_rag_assets(
                 inserted_count=inserted_count,
             )
 
-            results.append(
-                RagUploadFileResultDto(
-                    file_name=asset.file_name,
-                    content_type=materialized_asset.content_type,
-                    source_type=extracted.source_type,
-                    ingest_source=extracted.ingest_source,
-                    chunk_count=len(chunks),
-                    inserted_count=inserted_count,
-                    status="success",
-                )
+            result = RagUploadFileResultDto(
+                file_name=asset.file_name,
+                content_type=materialized_asset.content_type,
+                source_type=extracted.source_type,
+                ingest_source=extracted.ingest_source,
+                chunk_count=len(chunks),
+                inserted_count=inserted_count,
+                status="success",
             )
+            results.append(result)
+            _emit_file_result(progress_callback, safe_trace_id, index, len(assets), result)
             _log_upload(safe_trace_id, "文件", "文件处理成功", file_name=asset.file_name)
         except RagIngestError as exc:
             # 异常与兜底策略：
@@ -257,18 +398,18 @@ def upload_and_ingest_rag_assets(
                 stage=stage,
                 error=str(exc),
             )
-            results.append(
-                RagUploadFileResultDto(
-                    file_name=asset.file_name,
-                    content_type=asset.content_type,
-                    source_type=source_type,
-                    ingest_source=fallback_ingest_source,
-                    chunk_count=0,
-                    inserted_count=0,
-                    status="failed",
-                    error_message=str(exc),
-                )
+            result = RagUploadFileResultDto(
+                file_name=asset.file_name,
+                content_type=asset.content_type,
+                source_type=source_type,
+                ingest_source=fallback_ingest_source,
+                chunk_count=0,
+                inserted_count=0,
+                status="failed",
+                error_message=str(exc),
             )
+            results.append(result)
+            _emit_file_result(progress_callback, safe_trace_id, index, len(assets), result, stage=stage)
 
     response = RagUploadResponseDto(
         total_files=len(assets),
@@ -285,6 +426,20 @@ def upload_and_ingest_rag_assets(
         succeeded_files=response.succeeded_files,
         failed_files=response.failed_files,
         inserted=response.inserted,
+    )
+    _emit_progress(
+        progress_callback,
+        "batch-complete",
+        trace_id=safe_trace_id,
+        total_files=response.total_files,
+        succeeded_files=response.succeeded_files,
+        failed_files=response.failed_files,
+        inserted=response.inserted,
+        stage="完成",
+        status="success" if response.failed_files == 0 else "failed",
+        progress_percent=100,
+        files=[_upload_result_to_progress_payload(item) for item in response.files],
+        message="上传请求处理结束",
     )
     return response
 
@@ -372,6 +527,103 @@ def _detect_source_type(file_name: str) -> str:
 
 def _default_ingest_source(source_type: str) -> str:
     return "image_ocr_text" if source_type == "image" else "text_document"
+
+
+def _emit_file_stage(
+    progress_callback: RagUploadProgressCallback | None,
+    trace_id: str,
+    file_index: int,
+    total_files: int,
+    file_name: str,
+    stage: str,
+    message: str,
+) -> None:
+    _emit_progress(
+        progress_callback,
+        "file-stage",
+        trace_id=trace_id,
+        file_index=file_index,
+        total_files=total_files,
+        file_name=file_name,
+        stage=stage,
+        status="uploading",
+        file_progress_percent=_file_stage_progress_percent(stage),
+        progress_percent=_overall_file_progress_percent(file_index, total_files, stage),
+        message=message,
+    )
+
+
+def _emit_file_result(
+    progress_callback: RagUploadProgressCallback | None,
+    trace_id: str,
+    file_index: int,
+    total_files: int,
+    result: RagUploadFileResultDto,
+    stage: str = "完成",
+) -> None:
+    _emit_progress(
+        progress_callback,
+        "file-result",
+        trace_id=trace_id,
+        file_index=file_index,
+        total_files=total_files,
+        file_name=result.file_name,
+        stage=stage,
+        status=result.status,
+        file_progress_percent=100,
+        progress_percent=_overall_file_result_progress_percent(file_index, total_files),
+        result=_upload_result_to_progress_payload(result),
+        message="文件处理成功" if result.status == "success" else (result.error_message or "文件处理失败"),
+    )
+
+
+def _upload_result_to_progress_payload(result: RagUploadFileResultDto) -> dict[str, object]:
+    return {
+        "file_name": result.file_name,
+        "content_type": result.content_type,
+        "source_type": result.source_type,
+        "ingest_source": result.ingest_source,
+        "chunk_count": result.chunk_count,
+        "inserted_count": result.inserted_count,
+        "status": result.status,
+        "error_message": result.error_message,
+    }
+
+
+def _emit_progress(
+    progress_callback: RagUploadProgressCallback | None,
+    event: str,
+    **payload: object,
+) -> None:
+    if progress_callback is None:
+        return
+    progress_callback({"event": event, **payload})
+
+
+def _file_stage_progress_percent(stage: str) -> int:
+    stage_progress = _UPLOAD_STAGE_PROGRESS.get(stage)
+    if stage_progress is None:
+        stage_progress = 0.35
+    return _clamp_percent(round(stage_progress * 100))
+
+
+def _overall_file_progress_percent(file_index: int, total_files: int, stage: str) -> int:
+    if total_files <= 0:
+        return 0
+    stage_progress = _UPLOAD_STAGE_PROGRESS.get(stage, 0.35)
+    progress = round(((max(file_index, 1) - 1) + stage_progress) / total_files * 100)
+    return min(99, max(1, _clamp_percent(progress)))
+
+
+def _overall_file_result_progress_percent(file_index: int, total_files: int) -> int:
+    if total_files <= 0:
+        return 100
+    progress = round(max(file_index, 1) / total_files * 100)
+    return _clamp_percent(progress)
+
+
+def _clamp_percent(value: int) -> int:
+    return min(100, max(0, value))
 
 
 def _emit_embedding_timing_log(

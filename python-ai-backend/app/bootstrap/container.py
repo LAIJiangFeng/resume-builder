@@ -3,11 +3,13 @@ import logging
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from app.application.ports.agent_runtime_port import AgentRuntimePort
+from app.application.ports.auth_user_repository import AuthUserRepository
 from app.application.ports.embedding_port import EmbeddingPort
 from app.application.ports.file_parser_port import FileParserPort
 from app.application.ports.image_markdown_ocr_port import ImageMarkdownOcrPort
 from app.application.ports.interview_session_repository import InterviewSessionRepository
 from app.application.ports.llm_port import ChatClientPort
+from app.application.ports.resume_repository import ResumeRepository
 from app.application.ports.vector_store_port import VectorStorePort
 from app.domain.services.document_chunking_service import DocumentChunkingService
 from app.domain.services.interview_flow_service import InterviewGraph
@@ -19,7 +21,8 @@ from app.infrastructure.factories.llm_factory import create_chat_client, create_
 from app.infrastructure.llm.openai_embedding_adapter import OpenAIEmbeddingAdapter
 from app.infrastructure.llm.ollama_embedding_adapter import OllamaEmbeddingAdapter
 from app.infrastructure.llm.openai_image_markdown_ocr_adapter import OpenAIImageMarkdownOcrAdapter
-from app.infrastructure.persistence.mysql.session_repository import MySqlInterviewSessionRepository
+from app.infrastructure.persistence.mysql.resume_repository import MySqlResumeRepository
+from app.infrastructure.persistence.mysql.session_repository import MySqlAuthUserRepository, MySqlInterviewSessionRepository
 from app.infrastructure.persistence.pgvector.vector_store_adapter import PgVectorStoreAdapter
 from app.infrastructure.text.file_parser_adapter import FileParserAdapter
 
@@ -161,6 +164,24 @@ def build_agent_runtime(settings: Settings | None = None) -> AgentRuntimePort:
 def build_interview_session_repository(settings: Settings | None = None) -> InterviewSessionRepository:
     resolved = settings or get_settings()
     return MySqlInterviewSessionRepository(
+        datasource_url=resolved.mysql_datasource_url,
+        username=resolved.mysql_datasource_username,
+        password=resolved.mysql_datasource_password,
+    )
+
+
+def build_auth_user_repository(settings: Settings | None = None) -> AuthUserRepository:
+    resolved = settings or get_settings()
+    return MySqlAuthUserRepository(
+        datasource_url=resolved.mysql_datasource_url,
+        username=resolved.mysql_datasource_username,
+        password=resolved.mysql_datasource_password,
+    )
+
+
+def build_resume_repository(settings: Settings | None = None) -> ResumeRepository:
+    resolved = settings or get_settings()
+    return MySqlResumeRepository(
         datasource_url=resolved.mysql_datasource_url,
         username=resolved.mysql_datasource_username,
         password=resolved.mysql_datasource_password,

@@ -67,7 +67,7 @@ function handleCancel() {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(30, 20, 14, 0.45);
+  background: var(--overlay-backdrop);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -82,11 +82,11 @@ function handleCancel() {
 }
 
 .dialog-card {
-  background: #fff;
+  background: var(--surface-base);
   border-radius: 16px;
   width: 480px;
   max-width: 92vw;
-  box-shadow: 0 20px 60px rgba(30, 20, 14, 0.18);
+  box-shadow: var(--shadow-dialog);
   animation: slideUp 0.25s ease;
 }
 
@@ -105,7 +105,7 @@ function handleCancel() {
 .dialog-title {
   font-size: 16px;
   font-weight: 700;
-  color: #2d2521;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -115,7 +115,7 @@ function handleCancel() {
   width: 18px;
   height: 18px;
   fill: none;
-  stroke: #d97745;
+  stroke: var(--primary-500);
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -137,8 +137,8 @@ function handleCancel() {
   height: 30px;
   border: none;
   border-radius: 8px;
-  background: #f5f0ea;
-  color: #8a7461;
+  background: var(--surface-soft);
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   display: flex;
@@ -147,14 +147,14 @@ function handleCancel() {
 }
 
 .dialog-close:hover {
-  background: #efe7dc;
-  color: #d97745;
+  background: var(--primary-50);
+  color: var(--primary-500);
 }
 
 .dialog-desc {
   padding: 8px 24px 0;
   font-size: 12px;
-  color: #8a7461;
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
@@ -174,12 +174,12 @@ function handleCancel() {
 .form-label {
   font-size: 12px;
   font-weight: 600;
-  color: #5c4f44;
+  color: var(--gray-600);
 }
 
 .form-hint {
   font-size: 11px;
-  color: #a89888;
+  color: var(--text-tertiary);
 }
 
 .switch-row {
@@ -187,7 +187,7 @@ function handleCancel() {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #5c4f44;
+  color: var(--gray-600);
   user-select: none;
 }
 
@@ -199,7 +199,7 @@ function handleCancel() {
 .speech-status {
   margin-top: 4px;
   font-size: 11px;
-  color: #c96a3b;
+  color: var(--primary-500);
   line-height: 1.4;
 }
 
@@ -214,16 +214,17 @@ function handleCancel() {
   height: 38px;
   padding: 0 18px;
   border-radius: 8px;
-  border: 1px solid #ddd2c6;
-  background: #fff;
-  color: #8a7461;
+  border: 1px solid var(--border-color);
+  background: var(--surface-base);
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .btn-cancel:hover {
-  border-color: #c9bba9;
+  border-color: var(--primary-500);
+  color: var(--primary-500);
 }
 
 .btn-save {
@@ -231,15 +232,15 @@ function handleCancel() {
   padding: 0 20px;
   border-radius: 8px;
   border: none;
-  background: #d97745;
-  color: #fff;
+  background: var(--primary-500);
+  color: var(--text-inverse);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .btn-save:hover {
-  background: #c96a3b;
+  background: var(--primary-600);
 }
 
 @media (max-width: 520px) {

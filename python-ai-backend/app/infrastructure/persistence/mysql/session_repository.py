@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
+from app.application.ports.auth_user_repository import AuthAccount, AuthUserAlreadyExistsError, AuthUserRepository
 from app.application.ports.interview_session_repository import InterviewSessionRepository
 
 
@@ -144,10 +145,13 @@ class MySqlInterviewSessionRepository(InterviewSessionRepository):
             )
         return rows
 
-    def save(self, session_id: str, session: dict[str, Any]) -> None:
+    def save(self, session_id: str, user_id: str, session: dict[str, Any]) -> None:
         safe_session_id = _safe_text(session_id)
+        safe_user_id = _safe_text(user_id)
         if not safe_session_id:
             return
+        if not safe_user_id:
+            raise RuntimeError("用户上下文不能为空")
 
         safe_session = session if isinstance(session, dict) else {}
         final_evaluation = safe_session.get("finalEvaluation") if isinstance(safe_session.get("finalEvaluation"), dict) else None
@@ -158,10 +162,16 @@ class MySqlInterviewSessionRepository(InterviewSessionRepository):
         connection = self._connect()
         try:
             with connection.cursor() as cursor:
+                cursor.execute("SELECT user_id FROM interview_sessions WHERE session_id = %s LIMIT 1", (safe_session_id,))
+                owner_row = cursor.fetchone()
+                if owner_row is not None and _safe_text(owner_row.get("user_id")) != safe_user_id:
+                    raise RuntimeError("未找到面试会话")
+
                 cursor.execute(
                     """
                     INSERT INTO interview_sessions (
                         session_id,
+                        user_id,
                         mode,
                         status,
                         duration_minutes,
@@ -173,8 +183,9 @@ class MySqlInterviewSessionRepository(InterviewSessionRepository):
                         passed,
                         created_at,
                         updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
+                        user_id = VALUES(user_id),
                         mode = VALUES(mode),
                         status = VALUES(status),
                         duration_minutes = VALUES(duration_minutes),
@@ -188,6 +199,7 @@ class MySqlInterviewSessionRepository(InterviewSessionRepository):
                     """,
                     (
                         safe_session_id,
+                        safe_user_id,
                         "interviewer" if _safe_text(safe_session.get("mode")).lower() == "interviewer" else "candidate",
                         "finished" if _safe_text(safe_session.get("status")).lower() == "finished" else "active",
                         max(1, int(safe_session.get("durationMinutes") or 60)),
@@ -225,8 +237,11 @@ class MySqlInterviewSessionRepository(InterviewSessionRepository):
         finally:
             connection.close()
 
-    def list(self, limit: int) -> list[dict[str, Any]]:
+    def list(self, limit: int, user_id: str) -> list[dict[str, Any]]:
         safe_limit = max(1, min(int(limit or 20), 200))
+        safe_user_id = _safe_text(user_id)
+        if not safe_user_id:
+            return []
         connection = self._connect()
         try:
             with connection.cursor() as cursor:
@@ -234,6 +249,7 @@ class MySqlInterviewSessionRepository(InterviewSessionRepository):
                     """
                     SELECT
                         session_id,
+                        user_id,
                         mode,
                         status,
                         duration_minutes,
@@ -244,19 +260,21 @@ class MySqlInterviewSessionRepository(InterviewSessionRepository):
                         created_at,
                         updated_at
                     FROM interview_sessions
+                    WHERE user_id = %s
                     ORDER BY updated_at DESC
                     LIMIT %s
                     """,
-                    (safe_limit,),
+                    (safe_user_id, safe_limit),
                 )
                 session_rows = list(cursor.fetchall())
                 return self._hydrate_sessions(cursor, session_rows)
         finally:
             connection.close()
 
-    def get(self, session_id: str) -> dict[str, Any] | None:
+    def get(self, session_id: str, user_id: str) -> dict[str, Any] | None:
         safe_session_id = _safe_text(session_id)
-        if not safe_session_id:
+        safe_user_id = _safe_text(user_id)
+        if not safe_session_id or not safe_user_id:
             return None
 
         connection = self._connect()
@@ -266,6 +284,7 @@ class MySqlInterviewSessionRepository(InterviewSessionRepository):
                     """
                     SELECT
                         session_id,
+                        user_id,
                         mode,
                         status,
                         duration_minutes,
@@ -276,10 +295,10 @@ class MySqlInterviewSessionRepository(InterviewSessionRepository):
                         created_at,
                         updated_at
                     FROM interview_sessions
-                    WHERE session_id = %s
+                    WHERE session_id = %s AND user_id = %s
                     LIMIT 1
                     """,
-                    (safe_session_id,),
+                    (safe_session_id, safe_user_id),
                 )
                 row = cursor.fetchone()
                 if row is None:
@@ -339,6 +358,7 @@ class MySqlInterviewSessionRepository(InterviewSessionRepository):
             sessions.append(
                 {
                     "sessionId": safe_session_id,
+                    "userId": _safe_text(row.get("user_id")),
                     "mode": "interviewer" if _safe_text(row.get("mode")).lower() == "interviewer" else "candidate",
                     "status": "finished" if _safe_text(row.get("status")).lower() == "finished" else "active",
                     "durationMinutes": max(1, int(row.get("duration_minutes") or 60)),
@@ -353,3 +373,124 @@ class MySqlInterviewSessionRepository(InterviewSessionRepository):
             )
 
         return sessions
+
+
+class MySqlAuthUserRepository(AuthUserRepository):
+    def __init__(self, datasource_url: str, username: str = "", password: str = "") -> None:
+        self._config = _parse_mysql_config(datasource_url, username, password)
+
+    def _connect(self):
+        try:
+            import pymysql
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError("PyMySQL is required for MySQL auth user storage") from exc
+
+        return pymysql.connect(
+            host=self._config.host,
+            port=self._config.port,
+            user=self._config.username,
+            password=self._config.password,
+            database=self._config.database,
+            charset="utf8mb4",
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True,
+        )
+
+    def find_by_username(self, username: str) -> AuthAccount | None:
+        safe_username = _safe_text(username).lower()
+        if not safe_username:
+            return None
+
+        connection = self._connect()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        user_id,
+                        username,
+                        password_hash,
+                        display_name,
+                        role,
+                        permissions_json
+                    FROM auth_users
+                    WHERE username = %s
+                      AND enabled = 1
+                    LIMIT 1
+                    """,
+                    (safe_username,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return None
+                return AuthAccount(
+                    id=_safe_text(row.get("user_id")),
+                    username=_safe_text(row.get("username")).lower(),
+                    password_hash=_safe_text(row.get("password_hash")).lower(),
+                    display_name=_safe_text(row.get("display_name")),
+                    role="admin" if _safe_text(row.get("role")).lower() == "admin" else "user",
+                    permissions=_normalize_permissions(_loads_json(row.get("permissions_json"))),
+                )
+        finally:
+            connection.close()
+
+    def create_user(self, account: AuthAccount) -> AuthAccount:
+        safe_username = _safe_text(account.username).lower()
+        safe_user_id = _safe_text(account.id)
+        safe_display_name = _safe_text(account.display_name)
+        safe_password_hash = _safe_text(account.password_hash).lower()
+        if not safe_username or not safe_user_id or not safe_display_name or not safe_password_hash:
+            raise RuntimeError("注册账号信息不完整")
+
+        connection = self._connect()
+        try:
+            with connection.cursor() as cursor:
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO auth_users (
+                            user_id,
+                            username,
+                            password_hash,
+                            display_name,
+                            role,
+                            permissions_json,
+                            enabled
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            safe_user_id,
+                            safe_username,
+                            safe_password_hash,
+                            safe_display_name,
+                            "user",
+                            _dumps_json(list(account.permissions)),
+                            1,
+                        ),
+                    )
+                except Exception as exc:
+                    if exc.__class__.__name__ == "IntegrityError":
+                        raise AuthUserAlreadyExistsError("账号已存在") from exc
+                    raise
+        finally:
+            connection.close()
+
+        return AuthAccount(
+            id=safe_user_id,
+            username=safe_username,
+            password_hash=safe_password_hash,
+            display_name=safe_display_name,
+            role="user",
+            permissions=tuple(account.permissions),
+        )
+
+
+def _normalize_permissions(raw_permissions: Any) -> tuple[str, ...]:
+    if not isinstance(raw_permissions, list):
+        return ()
+    result: list[str] = []
+    for permission in raw_permissions:
+        safe_permission = _safe_text(permission)
+        if safe_permission:
+            result.append(safe_permission)
+    return tuple(result)

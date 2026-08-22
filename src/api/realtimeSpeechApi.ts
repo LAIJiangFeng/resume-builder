@@ -1,5 +1,6 @@
 // author: jf
 import { API_BASE_PATH } from './apiBase'
+import { fetchWithAuth } from '@/services/authService'
 
 export interface RealtimeClientSecretRequest {
   model?: string
@@ -26,7 +27,7 @@ export async function postRealtimeClientSecret(
   payload: RealtimeClientSecretRequest = {},
   signal?: AbortSignal
 ): Promise<Response> {
-  return fetch(getRealtimeClientSecretEndpoint(), {
+  return fetchWithAuth(getRealtimeClientSecretEndpoint(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

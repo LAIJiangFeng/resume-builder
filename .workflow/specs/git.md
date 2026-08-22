@@ -104,7 +104,7 @@ chore: 调整前端 lint 配置
 1. 优先从 `docs/requirements/` 中对应本次任务的需求记录提取修改内容、关联文件、验收细节、验证方式和验证结果。
 2. 如果 `docs/requirements/` 中已有本次修改的完整记录，提交说明不得重新编造范围、测试结果或验收结论，应以该记录为准并补充当前实际状态。
 3. `docs/requirements/` 可能被 `.gitignore` 忽略，准备提交说明时不得只依赖普通 `git status` 判断记录是否存在，必须直接检查对应文件。
-4. “测试结果”仅指 `.rules/testing-rules.md` 允许的现有命令、本地手工验证或一次性不落盘命令行检查结果，不得为了补全提交说明新增或修改测试代码。
+4. “测试结果”仅指 `.workflow/specs/testing.md` 允许的现有命令、本地手工验证或一次性不落盘命令行检查结果，不得为了补全提交说明新增或修改测试代码。
 
 提交说明 Markdown 文档必须满足：
 
@@ -128,7 +128,7 @@ chore: 调整前端 lint 配置
 ## 关联文件
 
 - `src/components/resume/PreviewPanel.vue`
-- `.rules/frontend-mandatory-rules.md`
+- `.workflow/specs/frontend.md`
 
 ## 验证方式与测试结果
 
@@ -175,8 +175,8 @@ chore: 调整前端 lint 配置
 1. 检查分支名称是否符合本文档规则。
 2. 检查提交信息是否符合 Conventional Commits 格式。
 3. 检查 `docs/requirements/` 中是否存在本次任务记录，并优先从该记录提取提交内容、关联文件、验收细节和验证结果。
-4. 按 `.rules/code-review-rules.md` 询问用户是否需要先执行 `code-review`。
-5. 按 `.rules/testing-rules.md` 使用允许的方式完成验证。
+4. 按 `.workflow/specs/code-review.md` 一次性确认提交授权和 Review 选择。
+5. 按 `.workflow/specs/testing.md` 使用允许的方式完成验证。
 6. 如果存在未验证项，必须在交付说明或提交说明文档中明确写出原因。
 
 ## 7. 优先级说明

@@ -1,3 +1,4 @@
+// author: jf
 import {
   getInterviewSessionDetail as fetchInterviewSessionDetailResponse,
   getInterviewSessions as fetchInterviewSessionsResponse,
@@ -41,6 +42,63 @@ function clampScore(value: unknown): number {
 
 function parseDateTimeText(value: unknown): string {
   return String(value ?? '').trim()
+}
+
+function normalizeContentValue(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value).trim()
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => normalizeContentValue(item))
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+  }
+  if (!value || typeof value !== 'object') return ''
+
+  const source = value as Record<string, unknown>
+  for (const key of ['assistantReply', 'content', 'text', 'message', 'value', 'outputText', 'output_text']) {
+    const content = normalizeContentValue(source[key])
+    if (content) return content
+  }
+
+  return ''
+}
+
+function extractAssistantReplyJson(text: string): string {
+  const cleaned = text.trim()
+  if (!cleaned) return ''
+
+  try {
+    const jsonText = (() => {
+      if (cleaned.startsWith('{') && cleaned.endsWith('}')) return cleaned
+      const first = cleaned.indexOf('{')
+      const last = cleaned.lastIndexOf('}')
+      if (first >= 0 && last > first) return cleaned.slice(first, last + 1)
+      return ''
+    })()
+    if (!jsonText) return ''
+
+    const parsed = JSON.parse(jsonText) as { assistantReply?: unknown }
+    return normalizeContentValue(parsed.assistantReply)
+  } catch {
+    return ''
+  }
+}
+
+function extractSessionMessageContent(source: Record<string, unknown>, role: 'assistant' | 'user'): string {
+  for (const key of ['content', 'messageContent', 'message_content', 'message', 'text', 'assistantReply', 'assistant_reply', 'reply', 'answer']) {
+    const content = normalizeContentValue(source[key])
+    if (!content) continue
+
+    if (role === 'assistant') {
+      return extractAssistantReplyJson(content) || content
+    }
+
+    return content
+  }
+
+  return ''
 }
 
 function normalizeTurnScore(value: unknown): InterviewTurnScore | null {
@@ -246,7 +304,7 @@ function normalizeSessionMessage(input: unknown): InterviewSessionMessage | null
   const source = input as Record<string, unknown>
 
   const role = String(source.role ?? '').trim().toLowerCase() === 'assistant' ? 'assistant' : 'user'
-  const content = String(source.content ?? '').trim()
+  const content = extractSessionMessageContent(source, role)
   if (!content) return null
 
   return {

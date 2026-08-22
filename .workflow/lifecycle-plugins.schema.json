@@ -1,0 +1,245 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "lifecycle-plugins.schema.json",
+  "x-author": "jf",
+  "title": "Resume Builder 生命周期插件注册表",
+  "description": "约束 MCP 与 Skill 注入轻量 Harness 生命周期的配置格式。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["author", "version", "selection", "hooks", "plugins"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "author": {
+      "const": "jf"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "selection": {
+      "$ref": "#/definitions/selection"
+    },
+    "hooks": {
+      "type": "array",
+      "minItems": 8,
+      "items": {
+        "$ref": "#/definitions/hookDefinition"
+      }
+    },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/plugin"
+      }
+    }
+  },
+  "definitions": {
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxAutomaticPluginsPerHook",
+        "explicitPluginsBypassAutomaticLimit",
+        "defaultUnavailablePolicy",
+        "contextMode",
+        "evidenceMode"
+      ],
+      "properties": {
+        "maxAutomaticPluginsPerHook": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "explicitPluginsBypassAutomaticLimit": {
+          "type": "boolean"
+        },
+        "defaultUnavailablePolicy": {
+          "enum": ["fallback_or_skip", "skip", "block"]
+        },
+        "contextMode": {
+          "enum": ["minimal", "focused", "full"]
+        },
+        "evidenceMode": {
+          "enum": ["summary_only", "paths_and_summary", "full"]
+        }
+      }
+    },
+    "hookDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "phase", "description"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/hookPoint"
+        },
+        "phase": {
+          "enum": [
+            "brainstorm",
+            "prd",
+            "ui",
+            "implement",
+            "break_loop",
+            "quality_gate",
+            "submit",
+            "archive"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "hookPoint": {
+      "type": "string",
+      "pattern": "^(brainstorm|prd|ui|implement|break_loop|quality_gate|submit|archive)\\.[a-z][a-z0-9_-]*$"
+    },
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "provider",
+        "enabled",
+        "activation",
+        "priority",
+        "description",
+        "hooks",
+        "fallback"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(mcp|skill)\\.[a-z0-9][a-z0-9-]*$"
+        },
+        "kind": {
+          "enum": ["mcp", "skill"]
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "enum": ["project", "runtime"]
+        },
+        "entry": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fallbackEntries": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "activation": {
+          "enum": ["always", "conditional", "manual"]
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hooks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/pluginHook"
+          }
+        },
+        "fallback": {
+          "$ref": "#/definitions/fallback"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "skill"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["source"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "skill"
+              },
+              "source": {
+                "const": "project"
+              }
+            },
+            "required": ["kind", "source"]
+          },
+          "then": {
+            "required": ["entry"]
+          }
+        }
+      ]
+    },
+    "pluginHook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["point", "when"],
+      "properties": {
+        "point": {
+          "$ref": "#/definitions/hookPoint"
+        },
+        "when": {
+          "$ref": "#/definitions/condition"
+        }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "anyTags": {
+          "$ref": "#/definitions/tags"
+        },
+        "allTags": {
+          "$ref": "#/definitions/tags"
+        },
+        "requiresAuthorization": {
+          "type": "boolean"
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      }
+    },
+    "fallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": {
+          "enum": ["plugin", "command", "manual", "none"]
+        },
+        "value": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}

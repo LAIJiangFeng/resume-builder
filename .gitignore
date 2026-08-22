@@ -49,8 +49,32 @@ __screenshots__/
 # Code review artifacts
 code-review/
 
+# Design artifacts
+docs/designs/
+
 # Requirements artifacts
-docs/requirements/
+docs/requirements/*
+!docs/requirements/2026-06-07-login-stitch-modern-redesign.md
+!docs/requirements/2026-06-07-login-dark-stitch-localization.md
+!docs/requirements/2026-06-07-dark-resume-editor-workspace.md
+!docs/requirements/2026-06-07-login-pen-modern-redesign.md
+!docs/requirements/2026-06-07-resume-editor-pen-modern-redesign.md
+!docs/requirements/2026-06-08-mobile-editor-layout-drag-fix.md
+!docs/requirements/2026-06-07-ai-interview-pen-modern-redesign.md
+!docs/requirements/2026-06-08-ai-interview-topbar-modern-redesign.md
+!docs/requirements/2026-06-08-ai-interview-history-message-ui-fix.md
+!docs/requirements/2026-06-08-normal-user-knowledge-menu-permission.md
+!docs/requirements/2026-06-08-mobile-bottom-menu-centering.md
+!docs/requirements/2026-06-09-mobile-editor-responsive-font.md
+!docs/requirements/2026-06-09-ai-interview-chat-responsive-font.md
+!docs/requirements/2026-06-09-mobile-template-modal-grid.md
 
 # Workflow
-.workflow
+.workflow/*
+!.workflow/lifecycle-plugins.json
+!.workflow/lifecycle-plugins.schema.json
+!.workflow/scripts/
+.workflow/scripts/*
+!.workflow/scripts/resolve-lifecycle-plugins.ps1
+!.workflow/specs/
+!.workflow/specs/**

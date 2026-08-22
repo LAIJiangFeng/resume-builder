@@ -46,10 +46,14 @@ public class InterviewSessionStoreService {
     }
 
     @Transactional
-    public void saveTurn(String sessionId, InterviewTurnRequest request, InterviewTurnResponse response) {
+    public void saveTurn(String sessionId, String userId, InterviewTurnRequest request, InterviewTurnResponse response) {
         String safeSessionId = safeText(sessionId);
+        String safeUserId = safeText(userId);
         if (safeSessionId.isBlank()) {
             return;
+        }
+        if (safeUserId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "请先登录后再保存面试会话");
         }
 
         FinalEvaluation finalEvaluation = response.finalEvaluation();
@@ -59,8 +63,11 @@ public class InterviewSessionStoreService {
             entity = new InterviewSessionEntity();
             entity.setSessionId(safeSessionId);
             entity.setCreatedAt(LocalDateTime.now());
+        } else if (!safeUserId.equals(safeText(entity.getUserId()))) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "未找到面试会话");
         }
 
+        entity.setUserId(safeUserId);
         entity.setMode(normalizeMode(request.mode()));
         entity.setStatus(resolveStatus(request.command(), response.nextAction()));
         entity.setDurationMinutes(normalizeDuration(request.durationMinutes()));
@@ -95,10 +102,14 @@ public class InterviewSessionStoreService {
         }
     }
 
-    public List<InterviewSessionSummaryResponse> listSessions(int limit) {
+    public List<InterviewSessionSummaryResponse> listSessions(String userId, int limit) {
+        String safeUserId = safeText(userId);
+        if (safeUserId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "请先登录后再查看面试历史");
+        }
         int safeLimit = Math.max(1, Math.min(limit, 100));
 
-        List<InterviewSessionSummaryRow> sessions = sessionMapper.selectSessionSummaries(safeLimit);
+        List<InterviewSessionSummaryRow> sessions = sessionMapper.selectSessionSummaries(safeUserId, safeLimit);
         List<InterviewSessionSummaryResponse> result = new ArrayList<>(sessions.size());
 
         for (InterviewSessionSummaryRow session : sessions) {
@@ -120,14 +131,18 @@ public class InterviewSessionStoreService {
         return result;
     }
 
-    public InterviewSessionDetailResponse getSessionDetail(String sessionId) {
+    public InterviewSessionDetailResponse getSessionDetail(String userId, String sessionId) {
+        String safeUserId = safeText(userId);
         String safeSessionId = safeText(sessionId);
+        if (safeUserId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "请先登录后再查看面试详情");
+        }
         if (safeSessionId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionId 不能为空");
         }
 
         InterviewSessionEntity session = sessionMapper.selectById(safeSessionId);
-        if (session == null) {
+        if (session == null || !safeUserId.equals(safeText(session.getUserId()))) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "未找到面试会话");
         }
 

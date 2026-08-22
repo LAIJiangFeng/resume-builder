@@ -183,9 +183,15 @@ function updatePageBreaks() {
 }
 
 function updatePreviewScale() {
-  const viewportWidth = previewScrollRef.value?.clientWidth || A4_WIDTH
-  const nextScale = Math.min(1, Math.max(0.36, (viewportWidth - 8) / A4_WIDTH))
-  previewScale.value = Number(nextScale.toFixed(3))
+  const scrollEl = previewScrollRef.value
+  const viewportWidth = scrollEl?.clientWidth || A4_WIDTH
+  const styles = scrollEl ? window.getComputedStyle(scrollEl) : null
+  const horizontalPadding =
+    (Number.parseFloat(styles?.paddingLeft ?? '0') || 0) +
+    (Number.parseFloat(styles?.paddingRight ?? '0') || 0)
+  const contentWidth = Math.max(0, viewportWidth - horizontalPadding)
+  const nextScale = Math.min(1, Math.max(0.36, contentWidth / A4_WIDTH))
+  previewScale.value = Math.floor(nextScale * 1000) / 1000
 }
 
 function openTemplatePicker() {
@@ -200,6 +206,15 @@ function chooseTemplate(key: ResumeTemplateKey) {
 
 let resizeObserver: ResizeObserver | null = null
 let previewResizeObserver: ResizeObserver | null = null
+let previewScaleFrame: number | null = null
+
+function schedulePreviewScaleUpdate() {
+  if (previewScaleFrame !== null) return
+  previewScaleFrame = requestAnimationFrame(() => {
+    previewScaleFrame = null
+    updatePreviewScale()
+  })
+}
 
 onMounted(() => {
   nextTick(() => {
@@ -211,10 +226,10 @@ onMounted(() => {
     resizeObserver.observe(resumeRef.value)
   }
   if (previewScrollRef.value) {
-    previewResizeObserver = new ResizeObserver(() => updatePreviewScale())
+    previewResizeObserver = new ResizeObserver(() => schedulePreviewScaleUpdate())
     previewResizeObserver.observe(previewScrollRef.value)
   }
-  window.addEventListener('resize', updatePreviewScale)
+  window.addEventListener('resize', schedulePreviewScaleUpdate)
   document.addEventListener('mousedown', handleDocumentPointerDown)
 })
 
@@ -241,7 +256,8 @@ watch(
 onUnmounted(() => {
   resizeObserver?.disconnect()
   previewResizeObserver?.disconnect()
-  window.removeEventListener('resize', updatePreviewScale)
+  if (previewScaleFrame !== null) cancelAnimationFrame(previewScaleFrame)
+  window.removeEventListener('resize', schedulePreviewScaleUpdate)
   document.removeEventListener('mousedown', handleDocumentPointerDown)
 })
 
@@ -314,6 +330,10 @@ async function exportPDF(mode: ExportQualityMode) {
   exportHost.appendChild(exportNode)
   document.body.appendChild(exportHost)
   prepareResumeTemplatePdfAlignment(exportNode)
+  const resumePaperBackground = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue('--resume-paper-background')
+    .trim()
 
   try {
     await setExportProgress(8, '准备导出资源...')
@@ -327,7 +347,7 @@ async function exportPDF(mode: ExportQualityMode) {
       useCORS: true,
       width: A4_WIDTH,
       windowWidth: A4_WIDTH,
-      backgroundColor: '#ffffff',
+      backgroundColor: resumePaperBackground,
       scrollX: 0,
       scrollY: 0,
     })
@@ -358,7 +378,7 @@ async function exportPDF(mode: ExportQualityMode) {
       if (!ctx) break
       ctx.imageSmoothingEnabled = true
       ctx.imageSmoothingQuality = 'high'
-      ctx.fillStyle = '#ffffff'
+      ctx.fillStyle = resumePaperBackground
       ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height)
       ctx.drawImage(canvas, 0, offsetY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight)
 
@@ -379,7 +399,7 @@ async function exportPDF(mode: ExportQualityMode) {
     pdf.save(`${store.basicInfo.name || '简历'}_resume.pdf`)
     await setExportProgress(100, '导出完成')
   } catch (err) {
-    console.error('PDF export failed:', err)
+    console.error('PDF 导出失败:', err)
   } finally {
     exportHost.remove()
     exportProgress.value = 0
@@ -393,7 +413,6 @@ async function exportPDF(mode: ExportQualityMode) {
   <aside class="preview-panel">
     <div class="preview-top">
       <div class="preview-title-row">
-        <span class="preview-title">实时预览</span>
         <button class="template-trigger" @click="openTemplatePicker">
           <span class="template-trigger-label">切换模板</span>
           <span class="template-trigger-name">{{ currentTemplate.name }}</span>
@@ -453,17 +472,15 @@ async function exportPDF(mode: ExportQualityMode) {
 <style scoped>
 .preview-panel {
   box-sizing: border-box;
-  width: clamp(320px, 46%, 812px);
-  max-width: 812px;
+  width: 100%;
   min-width: 0;
-  flex: 0 1 clamp(320px, 46%, 812px);
   height: 100%;
-  border-left: 1px solid #e4d8cb;
-  background: #efe7dc;
-  padding: 4px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .preview-top {
@@ -474,95 +491,75 @@ async function exportPDF(mode: ExportQualityMode) {
 }
 
 .preview-title-row {
+  min-width: 0;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  min-width: 0;
 }
 
-.preview-title {
-  color: #2d2521;
-  font-size: 16px;
+.template-trigger,
+.a4-badge,
+.btn-export {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .template-trigger {
-  height: 30px;
-  padding: 0 10px 0 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  border-radius: 8px;
-  border: 1px solid #e0d2c1;
-  background: #fff;
-  color: #2d2521;
-  font-size: 12px;
-  font-weight: 600;
+  height: 28px;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-soft);
+  color: var(--text-primary);
   cursor: pointer;
-  outline: none;
-  box-shadow: 0 1px 0 rgba(45, 37, 33, 0.06);
-  transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .template-trigger:hover {
-  border-color: #cdbba7;
-  background: #faf6f0;
-  box-shadow: 0 4px 12px rgba(45, 37, 33, 0.1);
+  border-color: var(--primary-500);
+  background: var(--primary-50);
+  color: var(--primary-500);
 }
 
 .template-trigger-label {
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 6px;
-  background: #2d2521;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
+  color: var(--primary-500);
 }
 
 .template-trigger-name {
-  color: #2d2521;
-  font-size: 12px;
-  font-weight: 700;
-  max-width: 180px;
-  white-space: nowrap;
+  max-width: 150px;
   overflow: hidden;
+  color: var(--text-primary);
   text-overflow: ellipsis;
 }
 
 .template-trigger-arrow {
-  color: #7b6a5b;
-  font-size: 11px;
-  line-height: 1;
+  color: var(--text-secondary);
 }
 
 .a4-badge {
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 8px;
-  background: #fff;
-  border: 1px solid #e9ded0;
-  color: #7b6a5b;
-  font-size: 11px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-base);
+  color: var(--text-secondary);
 }
 
 .btn-export {
-  border: none;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: #2d2521;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--primary-500);
+  background: var(--primary-500);
+  color: var(--text-inverse);
   cursor: pointer;
-  flex-shrink: 0;
+}
+
+.btn-export:hover:not(:disabled) {
+  background: var(--primary-600);
 }
 
 .btn-export:disabled {
@@ -573,8 +570,7 @@ async function exportPDF(mode: ExportQualityMode) {
 .export-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
 }
 
 .export-dropdown {
@@ -583,44 +579,44 @@ async function exportPDF(mode: ExportQualityMode) {
 
 .export-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   right: 0;
-  min-width: 124px;
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid #e9ded0;
-  background: #fff;
-  box-shadow: 0 10px 20px rgba(45, 37, 33, 0.14);
-  z-index: 12;
+  z-index: 20;
+  min-width: 152px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--surface-base);
+  box-shadow: var(--shadow-xl);
 }
 
 .export-menu-item {
   width: 100%;
-  border: none;
-  border-radius: 6px;
-  background: #fff;
-  color: #2d2521;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-base);
+  color: var(--text-primary);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   text-align: left;
-  padding: 7px 8px;
   cursor: pointer;
-  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .export-menu-item:hover {
-  background: #eadccf;
-  color: #1f1916;
+  background: var(--primary-50);
+  color: var(--primary-500);
 }
 
 .export-progress {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid #e9ded0;
-  border-radius: 8px;
-  background: #fff8f2;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--surface-soft);
 }
 
 .export-progress-head {
@@ -630,40 +626,44 @@ async function exportPDF(mode: ExportQualityMode) {
   gap: 8px;
 }
 
-.export-progress-text {
-  font-size: 12px;
-  color: #7b6a5b;
-  font-weight: 600;
-}
-
+.export-progress-text,
 .export-progress-percent {
   font-size: 12px;
-  color: #2d2521;
   font-weight: 700;
 }
 
+.export-progress-text {
+  color: var(--text-secondary);
+}
+
+.export-progress-percent {
+  color: var(--text-primary);
+}
+
 .export-progress-track {
-  position: relative;
-  width: 100%;
   height: 6px;
-  border-radius: 999px;
-  background: #eedfce;
   overflow: hidden;
+  border-radius: 999px;
+  background: var(--border-soft);
 }
 
 .export-progress-fill {
   display: block;
   height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #d97745 0%, #c96a3b 100%);
+  border-radius: inherit;
+  background: var(--primary-500);
   transition: width 0.18s ease;
 }
 
 .preview-scroll {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
   overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 0;
+  border: 0;
+  background: var(--resume-paper-background);
 }
 
 .paper-wrapper {
@@ -681,11 +681,9 @@ async function exportPDF(mode: ExportQualityMode) {
 
 .paper {
   box-sizing: border-box;
-  background: #fff;
-  border: 1px solid #d8dde6;
-  border-radius: 4px;
-  color: #000;
-  box-shadow: 0 12px 24px rgba(45, 37, 33, 0.1);
+  background: var(--resume-paper-background);
+  border: 0;
+  color: var(--resume-paper-ink);
 }
 
 .paper.pdf-exporting {
@@ -799,7 +797,7 @@ async function exportPDF(mode: ExportQualityMode) {
   left: 0;
   right: 0;
   top: 0;
-  border-top: 1px dashed #d97745;
+  border-top: 1px dashed var(--primary-500);
 }
 
 .page-line span {
@@ -807,10 +805,10 @@ async function exportPDF(mode: ExportQualityMode) {
   left: 50%;
   top: 0;
   transform: translate(-50%, -50%);
-  color: #d97745;
+  color: var(--primary-500);
   font-size: 10px;
   font-weight: 600;
-  background: #efe7dc;
+  background: var(--bg-preview);
   padding: 0 4px;
 }
 
@@ -820,22 +818,22 @@ async function exportPDF(mode: ExportQualityMode) {
     max-width: none;
     flex: 1 1 auto;
     height: 100%;
-    border-left: none;
-    padding: 6px 7px 8px;
-    gap: 7px;
+    padding: 6px 0 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    gap: 6px;
   }
 
   .preview-top {
     align-items: stretch;
     flex-direction: column;
+    padding: 0 8px;
   }
 
   .preview-title-row {
     flex-wrap: wrap;
-  }
-
-  .preview-title {
-    width: 100%;
   }
 
   .template-trigger {
@@ -871,12 +869,20 @@ async function exportPDF(mode: ExportQualityMode) {
   }
 
   .preview-scroll {
-    overflow: auto;
-    padding: 2px 0 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
+    scrollbar-gutter: auto;
+    padding: 0 8px;
+  }
+
+  .preview-scroll::-webkit-scrollbar {
+    display: none;
   }
 
   .paper-wrapper {
     padding-bottom: 0;
   }
+
 }
 </style>

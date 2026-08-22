@@ -50,10 +50,17 @@ public class InterviewTurnService {
             1) 第一轮仅允许候选人进行 1-2 分钟自我介绍。
             2) 每一轮只提出 1 个主问题或 1 个追问。
             3) 必须基于简历内容提问，不得脱离简历。
-            4) 每轮输出都要维护 memorySummary（不超过 220 中文字符）。
-            5) 只输出一个 JSON 对象，不要 markdown，不要额外解释。
-            6) assistantReply 必须是 JSON 的第一个字段。
-            7) 全程使用中文。
+            4) 流程按开场、高频基础技能、项目逐个深挖、场景题、工作经历核验、总结推进。
+            5) 技能题优先围绕 Java 后端高频面试点，项目题重点追问技术细节、方案取舍、问题处理和量化结果。
+            6) 每轮输出都要维护 memorySummary（不超过 220 中文字符），记录已确认信息、暴露短板和下一步追问方向。
+            7) turnScore 必须基于本轮回答表现，不得因为简历写得好默认高分。
+            8) 回答空泛、缺少技术细节、量化不清或参与度说不明白时，turnScore 不得高于 75 分。
+            9) 回答跑题、前后矛盾、关键事实说不清或真实性存疑时，turnScore 不得高于 60 分。
+            10) turnScore.comment 必须指出主要加分点或扣分点，避免空泛鼓励。
+            11) 结束轮必须输出 finalEvaluation，总分权重为项目经历 70%、专业技能 20%、工作经历 5%、教育经历 5%，通过线为 90 分。
+            12) 只输出一个 JSON 对象，不要 markdown，不要额外解释。
+            13) assistantReply 必须是 JSON 的第一个字段。
+            14) 全程使用中文。
             JSON 结构：
             {
               "assistantReply": "string",
@@ -97,7 +104,7 @@ public class InterviewTurnService {
         this.interviewRagTaskExecutor = interviewRagTaskExecutor;
     }
 
-    public Flux<InterviewStreamEvent> handleStream(InterviewTurnRequest request) {
+    public Flux<InterviewStreamEvent> handleStream(InterviewTurnRequest request, String userId) {
         Sinks.Many<InterviewStreamEvent> sink = Sinks.many().unicast().onBackpressureBuffer();
         StringBuilder rawBuilder = new StringBuilder();
         StringBuilder lastAssistantReply = new StringBuilder();
@@ -126,7 +133,7 @@ public class InterviewTurnService {
                             InterviewTurnResponse normalized = normalizeTurnResponse(rawBuilder.toString());
                             InterviewTurnResponse finalResponse = attachSessionId(normalized, sessionId);
                             try {
-                                interviewSessionStoreService.saveTurn(sessionId, request, finalResponse);
+                                interviewSessionStoreService.saveTurn(sessionId, userId, request, finalResponse);
                             } catch (Exception ex) {
                                 sink.tryEmitNext(new InterviewStreamEvent("error", safeText(ex.getMessage())));
                                 sink.tryEmitComplete();
@@ -182,6 +189,8 @@ public class InterviewTurnService {
                     你在一场模拟面试中扮演候选人。
                     当前模式：用户是面试官，你是候选人。
                     回答必须与简历事实保持一致，不能编造与简历冲突的信息。
+                    回答要具体、完整、逻辑一致，并提前考虑面试官下一轮可能追问的细节。
+                    如果面试官质疑真实性、指出回答不清楚或表达不满意，必须先复盘上一轮问题，再给出更稳妥的改进版回答。
                     每轮都要维护 memorySummary（不超过 220 中文字符）。
                     只输出一个 JSON 对象，不要 markdown，不要额外解释。
                     assistantReply 必须是 JSON 的第一个字段。

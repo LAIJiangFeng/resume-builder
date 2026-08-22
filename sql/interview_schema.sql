@@ -4,6 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS interview_sessions (
     session_id            VARCHAR(64)  NOT NULL COMMENT '会话 ID',
+    user_id               VARCHAR(64)  NOT NULL DEFAULT 'user-001' COMMENT '登录用户 ID',
     mode                  VARCHAR(32)  NOT NULL COMMENT 'candidate / interviewer',
     status                VARCHAR(32)  NOT NULL COMMENT 'active / finished',
     duration_minutes      INT          NOT NULL DEFAULT 60 COMMENT '面试时长（分钟）',
@@ -16,6 +17,7 @@ CREATE TABLE IF NOT EXISTS interview_sessions (
     created_at            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (session_id),
+    KEY idx_interview_sessions_user_updated_at (user_id, updated_at),
     KEY idx_interview_sessions_updated_at (updated_at),
     KEY idx_interview_sessions_status_updated_at (status, updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI 面试会话主表';

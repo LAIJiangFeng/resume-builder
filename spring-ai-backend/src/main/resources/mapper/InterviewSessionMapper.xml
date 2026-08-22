@@ -31,6 +31,7 @@
                 created_at,
                 updated_at
             FROM interview_sessions
+            WHERE user_id = #{userId}
             ORDER BY updated_at DESC, session_id DESC
             LIMIT #{limit}
         ),

@@ -1,5 +1,6 @@
 // author: jf
 import { API_BASE_PATH } from './apiBase'
+import { fetchWithAuth } from '@/services/authService'
 import type { InterviewTurnRequest } from '@/services/interview/types'
 
 export function getInterviewTurnStreamEndpoint(): string {
@@ -19,7 +20,7 @@ export async function postInterviewTurnStream(
   requestBody: InterviewTurnRequest,
   signal?: AbortSignal
 ): Promise<Response> {
-  return fetch(getInterviewTurnStreamEndpoint(), {
+  return fetchWithAuth(getInterviewTurnStreamEndpoint(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -31,7 +32,7 @@ export async function postInterviewTurnStream(
 }
 
 export async function getInterviewSessions(limit = 20, signal?: AbortSignal): Promise<Response> {
-  return fetch(getInterviewSessionsEndpoint(limit), {
+  return fetchWithAuth(getInterviewSessionsEndpoint(limit), {
     method: 'GET',
     headers: {
       Accept: 'application/json',
@@ -41,7 +42,7 @@ export async function getInterviewSessions(limit = 20, signal?: AbortSignal): Pr
 }
 
 export async function getInterviewSessionDetail(sessionId: string, signal?: AbortSignal): Promise<Response> {
-  return fetch(getInterviewSessionDetailEndpoint(sessionId), {
+  return fetchWithAuth(getInterviewSessionDetailEndpoint(sessionId), {
     method: 'GET',
     headers: {
       Accept: 'application/json',

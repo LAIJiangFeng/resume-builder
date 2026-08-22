@@ -67,20 +67,25 @@ if not "%DB_SERVICES%"=="" (
   echo [INFO] No Docker database containers were started. Skipping automatic SQL initialization.
 )
 
-echo [INFO] Starting Spring AI frontend and backend.
-docker compose %COMPOSE_ENV% --profile spring-ai up --build -d --no-deps resume-builder spring-ai-backend
+echo [INFO] 正在使用 Docker 启动 Spring AI 后端。
+docker compose %COMPOSE_ENV% --profile spring-ai up --build -d --no-deps spring-ai-backend
 if errorlevel 1 exit /b %errorlevel%
 
 echo.
-echo [INFO] Spring AI Docker stack started.
-echo [INFO] Frontend: http://localhost:%FRONTEND_PORT%
+echo [INFO] Spring AI 后端 Docker 服务已启动。
+echo [INFO] 本地前端：http://localhost:%FRONTEND_PORT%
 echo [INFO] Health: http://localhost:%BACKEND_PORT%/health
 echo [INFO] If a database container was skipped, make sure the host database has run sql/interview_schema.sql and sql/pgvector_rag_schema.sql.
 echo.
 docker compose %COMPOSE_ENV% ps
 echo.
-docker compose %COMPOSE_ENV% logs --tail=80 resume-builder spring-ai-backend
-exit /b %errorlevel%
+docker compose %COMPOSE_ENV% logs --tail=80 spring-ai-backend
+if errorlevel 1 exit /b %errorlevel%
+
+echo.
+echo [INFO] 前端未自动启动，请在新终端手动执行：
+echo [INFO] npm run dev -- --host 127.0.0.1 --port %FRONTEND_PORT% --strictPort
+exit /b 0
 
 :load_env
 set "FRONTEND_PORT=3000"
@@ -221,8 +226,13 @@ if not exist "sql\pgvector_rag_schema.sql" (
   exit /b 1
 )
 echo [INFO] Initializing pgvector database and RAG tables.
-docker exec -i resume-builder-pgvector psql -v ON_ERROR_STOP=1 -U "%POSTGRES_USER%" -d postgres < sql\create_pgvector_resume_builder_database.sql
-if errorlevel 1 exit /b 1
+docker exec resume-builder-pgvector psql -v ON_ERROR_STOP=1 -U "%POSTGRES_USER%" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '%POSTGRES_DB%'" | findstr /R /C:"1" >nul
+if errorlevel 1 (
+  docker exec -i resume-builder-pgvector psql -v ON_ERROR_STOP=1 -U "%POSTGRES_USER%" -d postgres < sql\create_pgvector_resume_builder_database.sql
+  if errorlevel 1 exit /b 1
+) else (
+  echo [INFO] pgvector database %POSTGRES_DB% already exists. Skipping database creation.
+)
 docker exec -i resume-builder-pgvector psql -v ON_ERROR_STOP=1 -U "%POSTGRES_USER%" -d "%POSTGRES_DB%" < sql\pgvector_rag_schema.sql
 if errorlevel 1 exit /b 1
 exit /b 0
@@ -245,8 +255,6 @@ goto wait_for_healthy_loop
 
 :ensure_build_images
 set "MISSING_IMAGES=0"
-call :ensure_image NODE_IMAGE
-call :ensure_image NGINX_IMAGE
 call :ensure_image MAVEN_IMAGE
 call :ensure_image JRE_IMAGE
 if not "%MISSING_IMAGES%"=="0" exit /b 1

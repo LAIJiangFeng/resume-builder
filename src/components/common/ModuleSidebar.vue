@@ -1,15 +1,18 @@
 <!-- author: jf -->
 <script setup lang="ts">
+import { computed } from 'vue'
 import { resolvePrimaryMenuPath, type PrimaryMenuKey } from '@/router/menuRoutes'
 
 const props = withDefaults(
   defineProps<{
     collapsed?: boolean
     activeMenu?: PrimaryMenuKey
+    canManageKnowledgeBase?: boolean
   }>(),
   {
     collapsed: false,
     activeMenu: 'resume-editor',
+    canManageKnowledgeBase: false,
   }
 )
 
@@ -28,7 +31,7 @@ const primaryMenus: Array<{ key: PrimaryMenuKey; label: string; path: string; ic
   },
   {
     key: 'ai-interviewer',
-    label: 'AI面试',
+    label: 'AI 面试',
     path: resolvePrimaryMenuPath('ai-interviewer'),
     iconPath:
       'M9 3h6M12 3v3m-6 4h12a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-3l-3 2-3-2H6a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2Zm3 3h.01M15 15h.01',
@@ -48,6 +51,13 @@ const primaryMenus: Array<{ key: PrimaryMenuKey; label: string; path: string; ic
   },
 ]
 
+const visiblePrimaryMenus = computed(() =>
+  primaryMenus.filter((menu) => menu.key !== 'knowledge-base' || props.canManageKnowledgeBase)
+)
+const mobileMenuStyle = computed(() => ({
+  '--visible-menu-count': String(visiblePrimaryMenus.value.length),
+}))
+
 function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
   event.preventDefault()
@@ -60,7 +70,7 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
     <div class="brand">
       <div class="brand-left">
         <span class="brand-logo-wrap" aria-hidden="true">
-          <img class="brand-logo" src="/favicon.svg?v=orange-black" alt="" />
+          <img class="brand-logo" src="/favicon.svg?v=modern-blue" alt="" />
         </span>
         <span class="brand-text">Resume Builder</span>
       </div>
@@ -78,10 +88,8 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
       </div>
     </div>
 
-    <p class="menu-caption">功能菜单</p>
-
-    <ul class="primary-menu-list">
-      <li v-for="menu in primaryMenus" :key="menu.key" class="primary-menu-item">
+    <ul class="primary-menu-list" :style="mobileMenuStyle">
+      <li v-for="menu in visiblePrimaryMenus" :key="menu.key" class="primary-menu-item">
         <a
           class="primary-menu-btn"
           :href="menu.path"
@@ -104,23 +112,24 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
 
 <style scoped>
 .sidebar {
-  width: 272px;
-  min-width: 272px;
-  background: #efe7dc;
-  padding: 18px 14px;
+  width: 70px;
+  min-width: 70px;
+  background: var(--sidebar-background);
+  padding: 18px 10px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  border-right: 1px solid #dfd2c2;
+  gap: 34px;
+  border-right: 1px solid var(--sidebar-border);
   overflow-y: auto;
+  box-shadow: inset -1px 0 0 var(--sidebar-inset);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 4px 4px 2px;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
 }
 
 .brand-left {
@@ -138,15 +147,16 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
 }
 
 .brand-logo-wrap {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
+  width: 40px;
+  height: 40px;
+  border-radius: 15px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   overflow: hidden;
-  box-shadow: 0 0 0 1px rgba(45, 37, 33, 0.1);
+  background: var(--surface-base);
+  box-shadow: 0 0 0 1px var(--primary-200), var(--shadow-md);
 }
 
 .brand-logo {
@@ -156,20 +166,22 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
 }
 
 .brand-text {
+  display: none;
   font-family: 'Noto Sans SC', sans-serif;
   font-size: 13px;
   font-weight: 700;
-  color: #2d2521;
+  color: var(--primary-700);
 }
 
 .collapse-btn {
+  display: none;
   position: relative;
   width: 28px;
   height: 28px;
   border: none;
   border-radius: 8px;
-  background: #f7f3ee;
-  color: #d97745;
+  background: var(--primary-50);
+  color: var(--primary-500);
   font-size: 14px;
   font-weight: 700;
   line-height: 1;
@@ -184,8 +196,8 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
   left: 50%;
   top: -8px;
   transform: translate(-50%, -100%);
-  background: #2d2521;
-  color: #fff;
+  background: var(--primary-700);
+  color: var(--text-inverse);
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
@@ -206,7 +218,7 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
   transform: translateX(-50%);
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
-  border-top: 6px solid #2d2521;
+  border-top: 6px solid var(--primary-700);
   opacity: 0;
   transition: opacity 0.16s ease;
   pointer-events: none;
@@ -221,12 +233,13 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
 }
 
 .collapse-btn:hover {
-  background: #f2ece5;
-  color: #c96a3b;
+  background: var(--primary-100);
+  color: var(--primary-600);
 }
 
 .menu-caption {
-  color: #8a7461;
+  display: none;
+  color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -237,41 +250,48 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .primary-menu-btn {
-  width: 100%;
-  border: 1px solid #e3d6c7;
-  background: #f8f3ed;
-  border-radius: 10px;
-  padding: 10px 10px;
+  width: 50px;
+  height: 48px;
+  border: 1px solid color-mix(in srgb, var(--primary-500) 18%, transparent);
+  background: var(--sidebar-item);
+  border-radius: 17px;
+  padding: 0;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
-  transition: border-color 0.18s ease, background-color 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 }
 
 .primary-menu-btn:hover {
-  border-color: #d5c4b3;
-  background: #fff;
+  border-color: color-mix(in srgb, var(--primary-500) 34%, transparent);
+  background: var(--surface-base);
+  transform: translateY(-1px);
 }
 
 .primary-menu-btn.active {
-  border-color: #d97745;
-  background: #fff;
-  box-shadow: 0 6px 14px rgba(217, 119, 69, 0.12);
+  border-color: var(--primary-500);
+  background: var(--primary-500);
+  box-shadow: var(--shadow-brand);
 }
 
 .menu-icon {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  background: #eadccf;
-  color: #7b6a5b;
+  width: 28px;
+  height: 28px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--sidebar-icon);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -291,21 +311,21 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
 }
 
 .primary-menu-btn.active .menu-icon {
-  background: #d97745;
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .menu-label {
-  color: #2d2521;
+  display: none;
+  color: var(--sidebar-icon);
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .sidebar.collapsed {
-  width: 92px;
-  min-width: 92px;
-  padding: 14px 8px;
+  width: 70px;
+  min-width: 70px;
+  padding: 18px 10px;
 }
 
 .sidebar.collapsed .brand-text,
@@ -330,9 +350,9 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
 
 @media (max-width: 960px) {
   .sidebar {
-    width: 78px;
-    min-width: 78px;
-    padding: 14px 8px;
+    width: 70px;
+    min-width: 70px;
+    padding: 18px 10px;
   }
 
   .brand {
@@ -348,7 +368,7 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
 
   .primary-menu-btn {
     justify-content: center;
-    padding: 10px 6px;
+    padding: 0;
   }
 
   .menu-icon {
@@ -367,14 +387,14 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
     z-index: 120;
     width: auto;
     min-width: 0;
-    height: calc(64px + env(safe-area-inset-bottom));
-    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    height: calc(72px + env(safe-area-inset-bottom));
+    padding: 6px 8px calc(7px + env(safe-area-inset-bottom));
     border-right: none;
-    border-top: 1px solid rgba(223, 210, 194, 0.92);
-    background: rgba(239, 231, 220, 0.96);
+    border-top: 1px solid var(--sidebar-border);
+    background: var(--mobile-nav-background);
     backdrop-filter: blur(14px);
     overflow: visible;
-    box-shadow: 0 -14px 28px rgba(45, 37, 33, 0.1);
+    box-shadow: var(--shadow-lg);
   }
 
   .brand,
@@ -388,29 +408,39 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
     width: 100%;
     height: 100%;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
+    grid-template-columns: repeat(var(--visible-menu-count, 4), minmax(0, 1fr));
+    align-items: center;
+    justify-items: center;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
   }
 
   .primary-menu-item {
+    width: 100%;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .primary-menu-btn,
   .sidebar.collapsed .primary-menu-btn {
+    width: min(74px, 100%);
     height: 100%;
     min-height: 46px;
     justify-content: center;
     flex-direction: column;
-    gap: 3px;
-    padding: 5px 4px;
+    gap: 2px;
+    padding: 4px 2px;
     border-radius: 13px;
-    background: rgba(255, 255, 255, 0.72);
+    border-color: color-mix(in srgb, var(--primary-500) 18%, transparent);
+    background: var(--sidebar-item-mobile);
   }
 
   .primary-menu-btn.active {
-    background: #fff;
-    box-shadow: 0 10px 18px rgba(217, 119, 69, 0.14);
+    background: var(--primary-500);
+    box-shadow: var(--shadow-brand);
   }
 
   .menu-icon,
@@ -423,12 +453,17 @@ function handleMenuClick(event: MouseEvent, key: PrimaryMenuKey) {
   .sidebar.collapsed .menu-label {
     display: block;
     width: 100%;
-    color: #2d2521;
-    font-size: 11px;
+    color: var(--sidebar-icon);
+    font-size: 10.5px;
     line-height: 1.1;
     text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+
+  .primary-menu-btn.active .menu-label {
+    color: var(--text-inverse);
   }
 }
 </style>

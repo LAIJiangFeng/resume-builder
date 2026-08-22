@@ -1330,8 +1330,8 @@ function handleReset() {
   min-width: 560px;
   max-width: 100vw;
   height: 100vh;
-  background: #faf7f4;
-  border-right: 1px solid #e9ded0;
+  background: var(--surface-disabled);
+  border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -1339,7 +1339,7 @@ function handleReset() {
   scrollbar-gutter: stable;
   pointer-events: auto;
   animation: slideIn 0.25s ease;
-  box-shadow: -8px 0 30px rgba(30, 20, 14, 0.1);
+  box-shadow: var(--shadow-xl);
 }
 
 .optimize-panel::-webkit-scrollbar {
@@ -1347,11 +1347,11 @@ function handleReset() {
 }
 
 .optimize-panel::-webkit-scrollbar-thumb {
-  background: #cdbcae;
+  background: var(--neutral-track);
 }
 
 .optimize-panel::-webkit-scrollbar-thumb:hover {
-  background: #b7a392;
+  background: var(--text-tertiary);
 }
 
 @keyframes slideIn {
@@ -1365,8 +1365,8 @@ function handleReset() {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid #e9ded0;
-  background: #fff;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-base);
   flex-shrink: 0;
 }
 
@@ -1388,7 +1388,7 @@ function handleReset() {
   width: 18px;
   height: 18px;
   fill: none;
-  stroke: #d97745;
+  stroke: var(--primary-500);
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1418,7 +1418,7 @@ function handleReset() {
 .panel-title {
   font-size: 15px;
   font-weight: 700;
-  color: #2d2521;
+  color: var(--text-primary);
 }
 
 .panel-header-right {
@@ -1432,8 +1432,8 @@ function handleReset() {
   height: 30px;
   border: none;
   border-radius: 8px;
-  background: #f5f0ea;
-  color: #8a7461;
+  background: var(--surface-soft);
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1441,22 +1441,22 @@ function handleReset() {
 }
 
 .close-btn:hover {
-  background: #efe7dc;
-  color: #d97745;
+  background: var(--primary-50);
+  color: var(--primary-500);
 }
 
 /* ---- Selector ---- */
 .selector-section {
   padding: 16px 20px;
-  border-bottom: 1px solid #e9ded0;
-  background: #fff;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-base);
   flex-shrink: 0;
 }
 
 .selector-label {
   font-size: 12px;
   font-weight: 600;
-  color: #5c4f44;
+  color: var(--gray-600);
   margin-bottom: 6px;
   display: block;
 }
@@ -1464,19 +1464,19 @@ function handleReset() {
 .module-select {
   width: 100%;
   height: 40px;
-  border: 1px solid #ddd2c6;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 0 12px;
   font-size: 13px;
-  color: #2d2521;
-  background: #faf7f4;
+  color: var(--text-primary);
+  background: var(--surface-soft);
   appearance: auto;
 }
 
 .module-select:focus {
   outline: none;
-  border-color: #d97745;
-  box-shadow: 0 0 0 3px rgba(217, 119, 69, 0.12);
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px var(--theme-focus-ring);
 }
 
 .action-row {
@@ -1490,8 +1490,8 @@ function handleReset() {
   height: 38px;
   border: none;
   border-radius: 8px;
-  background: #d97745;
-  color: #fff;
+  background: var(--primary-500);
+  color: var(--text-inverse);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1503,7 +1503,7 @@ function handleReset() {
 }
 
 .btn-optimize:hover:not(:disabled) {
-  background: #c96a3b;
+  background: var(--primary-600);
 }
 
 .btn-optimize:disabled {
@@ -1516,8 +1516,8 @@ function handleReset() {
   height: 38px;
   border: none;
   border-radius: 8px;
-  background: #e74c3c;
-  color: #fff;
+  background: var(--accent-red);
+  color: var(--text-inverse);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1528,16 +1528,16 @@ function handleReset() {
 }
 
 .btn-stop:hover {
-  background: #c0392b;
+  background: var(--accent-red-strong);
 }
 
 .btn-reset {
   height: 38px;
   padding: 0 14px;
-  border: 1px solid #ddd2c6;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: #fff;
-  color: #5c4f44;
+  background: var(--surface-base);
+  color: var(--gray-600);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1547,8 +1547,8 @@ function handleReset() {
 }
 
 .btn-reset:hover {
-  border-color: #d97745;
-  color: #d97745;
+  border-color: var(--primary-500);
+  color: var(--primary-500);
 }
 
 /* ---- Results ---- */
@@ -1568,18 +1568,18 @@ function handleReset() {
   gap: 8px;
   padding: 14px;
   border-radius: 10px;
-  background: #fef2f0;
-  border: 1px solid #f5d0cc;
+  background: var(--surface-danger);
+  border: 1px solid var(--border-danger);
 }
 
 .error-icon {
-  color: #c0392b;
+  color: var(--accent-red-strong);
   flex-shrink: 0;
 }
 
 .error-text {
   font-size: 13px;
-  color: #c0392b;
+  color: var(--accent-red-strong);
   line-height: 1.5;
   word-break: break-all;
 }
@@ -1601,7 +1601,7 @@ function handleReset() {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #d97745;
+  background: var(--primary-500);
   animation: bounce 1.2s infinite ease-in-out;
 }
 
@@ -1615,14 +1615,14 @@ function handleReset() {
 
 .loading-text {
   font-size: 13px;
-  color: #8a7461;
+  color: var(--text-secondary);
 }
 
 /* ---- Result Cards ---- */
 .result-card {
   border-radius: 10px;
-  border: 1px solid #e9ded0;
-  background: #fff;
+  border: 1px solid var(--border-color);
+  background: var(--surface-base);
   overflow: hidden;
 }
 
@@ -1649,13 +1649,13 @@ function handleReset() {
   gap: 6px;
   font-size: 13px;
   font-weight: 700;
-  color: #2d2521;
+  color: var(--text-primary);
 }
 
 .result-content {
   padding: 10px 14px 14px;
   font-size: 13px;
-  color: #3d3530;
+  color: var(--gray-700);
   line-height: 1.75;
   word-break: break-word;
 }
@@ -1665,7 +1665,7 @@ function handleReset() {
 .markdown-content :deep(h3),
 .markdown-content :deep(h4) {
   margin: 0 0 8px;
-  color: #2d2521;
+  color: var(--text-primary);
   line-height: 1.45;
 }
 
@@ -1696,20 +1696,21 @@ function handleReset() {
 }
 
 .markdown-content :deep(strong) {
-  color: #2d2521;
+  color: var(--text-primary);
   font-weight: 700;
 }
 
 .markdown-content :deep(code) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
-  background: #f5efe8;
+  background: var(--primary-50);
+  color: var(--primary-500);
   border-radius: 4px;
   padding: 0 4px;
 }
 
 .markdown-content :deep(a) {
-  color: #c96a3b;
+  color: var(--primary-500);
   text-decoration: underline;
   word-break: break-all;
 }
@@ -1717,10 +1718,10 @@ function handleReset() {
 .btn-apply {
   height: 30px;
   padding: 0 12px;
-  border: 1px solid #d97745;
+  border: 1px solid var(--primary-500);
   border-radius: 7px;
-  background: #d97745;
-  color: #fff;
+  background: var(--primary-500);
+  color: var(--text-inverse);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -1731,17 +1732,17 @@ function handleReset() {
 }
 
 .btn-apply:hover {
-  background: #c96a3b;
-  border-color: #c96a3b;
+  background: var(--primary-600);
+  border-color: var(--primary-600);
 }
 
 .btn-undo {
   height: 30px;
   padding: 0 12px;
-  border: 1px solid #ddd2c6;
+  border: 1px solid var(--border-color);
   border-radius: 7px;
-  background: #fff;
-  color: #5c4f44;
+  background: var(--surface-base);
+  color: var(--gray-600);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -1752,21 +1753,21 @@ function handleReset() {
 }
 
 .btn-undo:hover {
-  border-color: #d97745;
-  color: #d97745;
+  border-color: var(--primary-500);
+  color: var(--primary-500);
 }
 
 .applied-tag {
   font-size: 12px;
   font-weight: 600;
-  color: #d97745;
+  color: var(--primary-500);
   padding: 4px 10px;
   border-radius: 6px;
-  background: #fff3eb;
+  background: var(--primary-50);
 }
 
 .stream-cursor {
-  color: #d97745;
+  color: var(--primary-500);
   font-weight: 700;
   animation: blink 0.7s steps(2, start) infinite;
 }
@@ -1777,7 +1778,7 @@ function handleReset() {
 
 @media (max-width: 720px) {
   .panel-overlay {
-    background: rgba(30, 20, 14, 0.18);
+    background: var(--overlay-backdrop-soft);
     pointer-events: auto;
   }
 
@@ -1788,7 +1789,7 @@ function handleReset() {
     min-width: 0;
     height: 100dvh;
     border-right: none;
-    border-left: 1px solid #e9ded0;
+    border-left: 1px solid var(--border-color);
   }
 
   .panel-header,

@@ -42,9 +42,9 @@ const currentTemplateComponent = computed(() => currentTemplate.value.component)
   bottom: clamp(150px, 18vh, 210px);
   width: min(760px, calc(100% - 24px));
   border-radius: 14px;
-  border: 1px solid #d9ccbd;
-  background: #fffefd;
-  box-shadow: 0 10px 26px rgba(45, 37, 33, 0.24);
+  border: 1px solid var(--border-color);
+  background: var(--surface-base);
+  box-shadow: var(--shadow-dialog);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -60,7 +60,7 @@ const currentTemplateComponent = computed(() => currentTemplate.value.component)
 }
 
 .overlay-title {
-  color: #2b2620;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 700;
 }
@@ -70,8 +70,8 @@ const currentTemplateComponent = computed(() => currentTemplate.value.component)
   height: 24px;
   border-radius: 7px;
   border: none;
-  background: #f3eee7;
-  color: #7e6f5e;
+  background: var(--primary-50);
+  color: var(--primary-500);
   font-size: 15px;
   font-weight: 700;
   line-height: 1;
@@ -82,7 +82,7 @@ const currentTemplateComponent = computed(() => currentTemplate.value.component)
   flex: 1;
   min-height: 0;
   border-radius: 12px;
-  background: #ede3d7;
+  background: var(--surface-disabled);
   padding: 10px;
 }
 
@@ -95,10 +95,10 @@ const currentTemplateComponent = computed(() => currentTemplate.value.component)
 .paper {
   width: 100%;
   min-height: 100%;
-  background: #fff;
+  background: var(--resume-paper-background);
   border-radius: 6px;
-  border: 1px solid #e8e0d6;
-  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--resume-paper-border);
+  box-shadow: var(--resume-paper-shadow);
 }
 
 .paper :deep([class*='resume-template-']) {
