@@ -59,7 +59,11 @@ spring-ai-backend/
 ├─ .env.example
 ├─ docker-compose.yml
 ├─ ../sql/
-│  └─ *.sql
+│  ├─ bootstrap/
+│  ├─ migrations/
+│  │  ├─ mysql/
+│  │  └─ postgresql/
+│  └─ seeds/
 ├─ src/main/java/com/resumebuilder/springaibackend/
 │  ├─ controller/
 │  ├─ service/
@@ -209,7 +213,7 @@ controller -> service -> mapper -> entity
 - 不写业务规则。
 - 不做会话流程推进。
 - 不在应用启动时执行项目自写的一次性建表 SQL。
-- pgvector 禁止后端自动建表，Spring AI `PgVectorStore` 必须保持 `initializeSchema(false)`；表结构只能由开发者手工执行 `sql/pgvector_rag_schema.sql` 创建。
+- pgvector 禁止后端自动建表，Spring AI `PgVectorStore` 必须保持 `initializeSchema(false)`；表结构由应用启动前的独立 Flyway 容器执行 `sql/migrations/postgresql/` 中的版本迁移创建。
 - 不在配置类中做复杂业务初始化。
 
 ### 5.7 `exception/`
@@ -314,7 +318,7 @@ controller -> service -> mapper -> entity
 边界：
 - 不存放临时脚本。
 - 不存放一次性建表 SQL。
-- 一次性 SQL 必须放在仓库根目录 `sql/`。
+- 手工建库、版本迁移和本地种子 SQL 必须分别放入仓库根目录 `sql/bootstrap/`、`sql/migrations/` 和 `sql/seeds/`。
 
 ---
 
@@ -385,8 +389,8 @@ Spring AI 后端涉及数据库、SQL、Mapper、pgvector、一次性 SQL 与会
 2. 在 `resources/mapper/` 中增加 XML
    - 用于承接新增 Mapper SQL。
 
-3. 在 `sql/` 中增加独立 SQL 文件
-   - 仅用于一次性 DDL、索引、初始化。
+3. 在对应数据库的 `sql/migrations/` 子目录中增加更高版本迁移
+   - 仅用于 DDL、索引和兼容性数据迁移，已执行文件禁止修改。
 
 4. 在本文档列出的外层职责目录中按 provider 或能力继续细分
    - 例如 `client/openai/`、`client/dashscope/`、`vector/pgvector/`、`embedding/ollama/`、`realtime/dashscope/`。

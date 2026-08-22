@@ -2,7 +2,7 @@
 REM author: jf
 setlocal EnableExtensions
 
-REM Stop the current stack first so Spring AI and Python AI do not run together.
+REM 先停止当前套件，避免 Spring AI 与 Python AI 同时运行。
 set "COMPOSE_ENV="
 set "COMPOSE_ENV_FILE=.env"
 if exist ".env" (
@@ -31,14 +31,19 @@ if not errorlevel 1 (
   echo [WARN] Host port %MYSQL_PORT% is already in use. Skipping MySQL container.
   echo [INFO] Spring AI backend will use host.docker.internal:%MYSQL_PORT%.
   set "SPRING_MYSQL_DATASOURCE_URL=jdbc:mysql://host.docker.internal:%MYSQL_PORT%/%MYSQL_DATABASE%?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
+  call :is_compose_mysql_url FLYWAY_MYSQL_URL
+  if not errorlevel 1 set "FLYWAY_MYSQL_URL=jdbc:mysql://host.docker.internal:%MYSQL_PORT%/%MYSQL_DATABASE%?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
+  if "%FLYWAY_MYSQL_URL%"=="" set "FLYWAY_MYSQL_URL=jdbc:mysql://host.docker.internal:%MYSQL_PORT%/%MYSQL_DATABASE%?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
 ) else (
   set "DB_SERVICES=%DB_SERVICES% mysql"
+  if "%FLYWAY_MYSQL_URL%"=="" set "FLYWAY_MYSQL_URL=jdbc:mysql://mysql:3306/%MYSQL_DATABASE%?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
 )
 
 if "%SPRING_PGVECTOR_DATASOURCE_URL%"=="" if not "%PGVECTOR_DATASOURCE_URL%"=="" set "SPRING_PGVECTOR_DATASOURCE_URL=%PGVECTOR_DATASOURCE_URL%"
 call :is_external_pgvector_url SPRING_PGVECTOR_DATASOURCE_URL
 if not errorlevel 1 (
   echo [INFO] Using configured external or host pgvector URL. Skipping pgvector container.
+  call :configure_spring_external_postgres_migration
   call :disable_pgvector_service
 ) else (
   call :is_port_listening %PGVECTOR_PORT%
@@ -48,11 +53,20 @@ if not errorlevel 1 (
     if "%SPRING_PGVECTOR_DATASOURCE_URL%"=="" set "SPRING_PGVECTOR_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:%PGVECTOR_PORT%/%POSTGRES_DB%"
     call :is_compose_pgvector_url SPRING_PGVECTOR_DATASOURCE_URL
     if not errorlevel 1 set "SPRING_PGVECTOR_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:%PGVECTOR_PORT%/%POSTGRES_DB%"
+    call :is_compose_pgvector_url FLYWAY_POSTGRES_URL
+    if not errorlevel 1 set "FLYWAY_POSTGRES_URL=jdbc:postgresql://host.docker.internal:%PGVECTOR_PORT%/%POSTGRES_DB%"
+    if "%FLYWAY_POSTGRES_URL%"=="" set "FLYWAY_POSTGRES_URL=jdbc:postgresql://host.docker.internal:%PGVECTOR_PORT%/%POSTGRES_DB%"
     call :disable_pgvector_service
   ) else (
     set "DB_SERVICES=%DB_SERVICES% pgvector"
+    if "%FLYWAY_POSTGRES_URL%"=="" set "FLYWAY_POSTGRES_URL=jdbc:postgresql://pgvector:5432/%POSTGRES_DB%"
   )
 )
+
+if "%FLYWAY_MYSQL_USER%"=="" set "FLYWAY_MYSQL_USER=root"
+if "%FLYWAY_MYSQL_PASSWORD%"=="" set "FLYWAY_MYSQL_PASSWORD=%MYSQL_ROOT_PASSWORD%"
+if "%FLYWAY_POSTGRES_USER%"=="" set "FLYWAY_POSTGRES_USER=%POSTGRES_USER%"
+if "%FLYWAY_POSTGRES_PASSWORD%"=="" set "FLYWAY_POSTGRES_PASSWORD=%POSTGRES_PASSWORD%"
 
 call :ensure_database_images
 if errorlevel 1 exit /b %errorlevel%
@@ -61,11 +75,14 @@ if not "%DB_SERVICES%"=="" (
   echo [INFO] Starting database containers:%DB_SERVICES%
   docker compose %COMPOSE_ENV% --profile spring-ai up --build -d %DB_SERVICES%
   if errorlevel 1 exit /b %errorlevel%
-  call :initialize_started_databases
+  call :wait_for_started_databases
   if errorlevel 1 exit /b %errorlevel%
 ) else (
-  echo [INFO] No Docker database containers were started. Skipping automatic SQL initialization.
+  echo [INFO] 未启动 Docker 数据库容器，将迁移已配置的外部数据库。
 )
+
+call :run_database_migrations
+if errorlevel 1 exit /b %errorlevel%
 
 echo [INFO] 正在使用 Docker 启动 Spring AI 后端。
 docker compose %COMPOSE_ENV% --profile spring-ai up --build -d --no-deps spring-ai-backend
@@ -75,7 +92,7 @@ echo.
 echo [INFO] Spring AI 后端 Docker 服务已启动。
 echo [INFO] 本地前端：http://localhost:%FRONTEND_PORT%
 echo [INFO] Health: http://localhost:%BACKEND_PORT%/health
-echo [INFO] If a database container was skipped, make sure the host database has run sql/interview_schema.sql and sql/pgvector_rag_schema.sql.
+echo [INFO] 数据库迁移目录：sql/migrations/mysql 与 sql/migrations/postgresql。
 echo.
 docker compose %COMPOSE_ENV% ps
 echo.
@@ -101,6 +118,12 @@ set "POSTGRES_PASSWORD=pgvector"
 set "PGVECTOR_PORT=5433"
 set "PGVECTOR_DATASOURCE_URL="
 set "SPRING_PGVECTOR_DATASOURCE_URL="
+set "FLYWAY_MYSQL_URL="
+set "FLYWAY_MYSQL_USER="
+set "FLYWAY_MYSQL_PASSWORD="
+set "FLYWAY_POSTGRES_URL="
+set "FLYWAY_POSTGRES_USER="
+set "FLYWAY_POSTGRES_PASSWORD="
 set "NODE_IMAGE=node:22-alpine"
 set "NGINX_IMAGE=nginx:alpine"
 set "MAVEN_IMAGE=maven:3.9.9-eclipse-temurin-21"
@@ -123,6 +146,12 @@ for /f "usebackq tokens=1,* delims==" %%A in ("%~1") do (
   if "%%A"=="PGVECTOR_PORT" set "PGVECTOR_PORT=%%B"
   if "%%A"=="PGVECTOR_DATASOURCE_URL" set "PGVECTOR_DATASOURCE_URL=%%B"
   if "%%A"=="SPRING_PGVECTOR_DATASOURCE_URL" set "SPRING_PGVECTOR_DATASOURCE_URL=%%B"
+  if "%%A"=="FLYWAY_MYSQL_URL" set "FLYWAY_MYSQL_URL=%%B"
+  if "%%A"=="FLYWAY_MYSQL_USER" set "FLYWAY_MYSQL_USER=%%B"
+  if "%%A"=="FLYWAY_MYSQL_PASSWORD" set "FLYWAY_MYSQL_PASSWORD=%%B"
+  if "%%A"=="FLYWAY_POSTGRES_URL" set "FLYWAY_POSTGRES_URL=%%B"
+  if "%%A"=="FLYWAY_POSTGRES_USER" set "FLYWAY_POSTGRES_USER=%%B"
+  if "%%A"=="FLYWAY_POSTGRES_PASSWORD" set "FLYWAY_POSTGRES_PASSWORD=%%B"
   if "%%A"=="OPENAI_BASE_URL" set "OPENAI_BASE_URL=%%B"
   if "%%A"=="OPENAI_CHAT_BASE_URL" set "OPENAI_CHAT_BASE_URL=%%B"
   if "%%A"=="OPENAI_EMBEDDING_BASE_URL" set "OPENAI_EMBEDDING_BASE_URL=%%B"
@@ -148,6 +177,8 @@ call :normalize_one_url OPENAI_REALTIME_BASE_URL
 call :normalize_one_url OLLAMA_EMBEDDING_BASE_URL
 call :normalize_one_url PGVECTOR_DATASOURCE_URL
 call :normalize_one_url SPRING_PGVECTOR_DATASOURCE_URL
+call :normalize_one_url FLYWAY_MYSQL_URL
+call :normalize_one_url FLYWAY_POSTGRES_URL
 exit /b 0
 
 :normalize_one_url
@@ -175,6 +206,19 @@ if not "%CURRENT_VALUE://pgvector:=%"=="%CURRENT_VALUE%" exit /b 0
 if not "%CURRENT_VALUE:@pgvector:=%"=="%CURRENT_VALUE%" exit /b 0
 exit /b 1
 
+:is_compose_mysql_url
+call set "CURRENT_VALUE=%%%~1%%"
+if "%CURRENT_VALUE%"=="" exit /b 1
+if not "%CURRENT_VALUE://mysql:=%"=="%CURRENT_VALUE%" exit /b 0
+if not "%CURRENT_VALUE:@mysql:=%"=="%CURRENT_VALUE%" exit /b 0
+exit /b 1
+
+:configure_spring_external_postgres_migration
+call :is_compose_pgvector_url FLYWAY_POSTGRES_URL
+if not errorlevel 1 set "FLYWAY_POSTGRES_URL="
+if "%FLYWAY_POSTGRES_URL%"=="" set "FLYWAY_POSTGRES_URL=%SPRING_PGVECTOR_DATASOURCE_URL%"
+exit /b 0
+
 :remove_skipped_service
 docker compose %COMPOSE_ENV% --profile spring-ai rm -sf %~1 >nul 2>nul
 exit /b 0
@@ -185,56 +229,33 @@ set "PGVECTOR_PROFILE_PYTHON_AI=host-pgvector-disabled"
 call :remove_skipped_service pgvector
 exit /b 0
 
-:initialize_started_databases
+:wait_for_started_databases
 for %%S in (%DB_SERVICES%) do (
-  if "%%S"=="mysql" call :initialize_mysql
-  if errorlevel 1 exit /b 1
-  if "%%S"=="pgvector" call :initialize_pgvector
+  if "%%S"=="mysql" call :wait_for_healthy resume-builder-mysql 120
+  if "%%S"=="pgvector" call :wait_for_healthy resume-builder-pgvector 120
   if errorlevel 1 exit /b 1
 )
 exit /b 0
 
-:initialize_mysql
-echo [INFO] Waiting for MySQL container to become healthy.
-call :wait_for_healthy resume-builder-mysql 120
-if errorlevel 1 exit /b 1
-if not exist "sql\mysql_database_schema.sql" (
-  echo [ERROR] Missing sql\mysql_database_schema.sql.
+:run_database_migrations
+if not exist "sql\migrations\mysql" (
+  echo [ERROR] 缺少 sql\migrations\mysql 迁移目录。
   exit /b 1
 )
-if not exist "sql\interview_schema.sql" (
-  echo [ERROR] Missing sql\interview_schema.sql.
+if not exist "sql\migrations\postgresql" (
+  echo [ERROR] 缺少 sql\migrations\postgresql 迁移目录。
   exit /b 1
 )
-echo [INFO] Initializing MySQL database and interview tables.
-docker exec -i resume-builder-mysql mysql -uroot "-p%MYSQL_ROOT_PASSWORD%" < sql\mysql_database_schema.sql
+echo [INFO] 正在构建固定版本的 Flyway 运行镜像。
+docker compose %COMPOSE_ENV% --profile migration build flyway-mysql
 if errorlevel 1 exit /b 1
-docker exec -i resume-builder-mysql mysql -uroot "-p%MYSQL_ROOT_PASSWORD%" "%MYSQL_DATABASE%" < sql\interview_schema.sql
+echo [INFO] 正在执行 MySQL 版本迁移。
+docker compose %COMPOSE_ENV% --profile migration run --rm --no-deps flyway-mysql
 if errorlevel 1 exit /b 1
-exit /b 0
-
-:initialize_pgvector
-echo [INFO] Waiting for pgvector container to become healthy.
-call :wait_for_healthy resume-builder-pgvector 120
+echo [INFO] 正在执行 PostgreSQL 版本迁移。
+docker compose %COMPOSE_ENV% --profile migration run --rm --no-deps flyway-pgvector
 if errorlevel 1 exit /b 1
-if not exist "sql\create_pgvector_resume_builder_database.sql" (
-  echo [ERROR] Missing sql\create_pgvector_resume_builder_database.sql.
-  exit /b 1
-)
-if not exist "sql\pgvector_rag_schema.sql" (
-  echo [ERROR] Missing sql\pgvector_rag_schema.sql.
-  exit /b 1
-)
-echo [INFO] Initializing pgvector database and RAG tables.
-docker exec resume-builder-pgvector psql -v ON_ERROR_STOP=1 -U "%POSTGRES_USER%" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '%POSTGRES_DB%'" | findstr /R /C:"1" >nul
-if errorlevel 1 (
-  docker exec -i resume-builder-pgvector psql -v ON_ERROR_STOP=1 -U "%POSTGRES_USER%" -d postgres < sql\create_pgvector_resume_builder_database.sql
-  if errorlevel 1 exit /b 1
-) else (
-  echo [INFO] pgvector database %POSTGRES_DB% already exists. Skipping database creation.
-)
-docker exec -i resume-builder-pgvector psql -v ON_ERROR_STOP=1 -U "%POSTGRES_USER%" -d "%POSTGRES_DB%" < sql\pgvector_rag_schema.sql
-if errorlevel 1 exit /b 1
+echo [INFO] 数据库版本迁移完成。
 exit /b 0
 
 :wait_for_healthy

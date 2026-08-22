@@ -40,8 +40,9 @@
 
 - MySQL is the fixed store for AI interview sessions and messages.
 - PostgreSQL + pgvector is reserved for RAG vector storage and similarity search.
-- One-time schema and index SQL belongs in `sql/`.
-- Application startup must not run project-authored one-time SQL.
+- Manual database creation SQL belongs in `sql/bootstrap/`; version migrations belong in the matching `sql/migrations/<database>/` directory.
+- Application startup must not run project-authored SQL; Docker launchers and CI/CD run version migrations through an independent Flyway container before starting applications.
+- Applied migrations are immutable, and production migrations must never execute files under `sql/seeds/`.
 - Spring AI `PgVectorStore` must keep schema initialization disabled.
 
 ## Workflow

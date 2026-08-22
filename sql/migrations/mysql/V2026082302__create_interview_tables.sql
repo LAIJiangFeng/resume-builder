@@ -1,6 +1,5 @@
 -- author: jf
--- AI 面试会话表与消息表初始化脚本
--- 执行方式：连接目标 MySQL 数据库后，手工执行本文件
+-- 创建 AI 面试表，并为旧表补齐账号隔离字段和索引。
 
 CREATE TABLE IF NOT EXISTS interview_sessions (
     session_id            VARCHAR(64)  NOT NULL COMMENT '会话 ID',
@@ -22,15 +21,51 @@ CREATE TABLE IF NOT EXISTS interview_sessions (
     KEY idx_interview_sessions_status_updated_at (status, updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI 面试会话主表';
 
+SET @interview_user_column_exists := (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'interview_sessions'
+      AND COLUMN_NAME = 'user_id'
+);
+
+SET @add_interview_user_column_sql := IF(
+    @interview_user_column_exists = 0,
+    'ALTER TABLE interview_sessions ADD COLUMN user_id VARCHAR(64) NOT NULL DEFAULT ''user-001'' COMMENT ''登录用户 ID'' AFTER session_id',
+    'SELECT 1'
+);
+
+PREPARE add_interview_user_column_stmt FROM @add_interview_user_column_sql;
+EXECUTE add_interview_user_column_stmt;
+DEALLOCATE PREPARE add_interview_user_column_stmt;
+
+SET @interview_user_index_exists := (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'interview_sessions'
+      AND INDEX_NAME = 'idx_interview_sessions_user_updated_at'
+);
+
+SET @add_interview_user_index_sql := IF(
+    @interview_user_index_exists = 0,
+    'ALTER TABLE interview_sessions ADD INDEX idx_interview_sessions_user_updated_at (user_id, updated_at)',
+    'SELECT 1'
+);
+
+PREPARE add_interview_user_index_stmt FROM @add_interview_user_index_sql;
+EXECUTE add_interview_user_index_stmt;
+DEALLOCATE PREPARE add_interview_user_index_stmt;
+
 CREATE TABLE IF NOT EXISTS interview_session_messages (
-    id                    BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
-    session_id            VARCHAR(64)  NOT NULL COMMENT '所属会话 ID',
-    seq_no                INT          NOT NULL COMMENT '会话内消息顺序号',
-    role                  VARCHAR(32)  NOT NULL COMMENT 'user / assistant',
-    content               LONGTEXT     NOT NULL COMMENT '消息内容',
-    score                 INT               NULL COMMENT '本轮评分',
-    score_comment         VARCHAR(1024)     NULL COMMENT '评分点评',
-    created_at            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '消息创建时间',
+    id            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+    session_id    VARCHAR(64)  NOT NULL COMMENT '所属会话 ID',
+    seq_no        INT          NOT NULL COMMENT '会话内消息顺序号',
+    role          VARCHAR(32)  NOT NULL COMMENT 'user / assistant',
+    content       LONGTEXT     NOT NULL COMMENT '消息内容',
+    score         INT               NULL COMMENT '本轮评分',
+    score_comment VARCHAR(1024)     NULL COMMENT '评分点评',
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '消息创建时间',
     PRIMARY KEY (id),
     UNIQUE KEY uk_interview_session_messages_session_seq (session_id, seq_no),
     KEY idx_interview_session_messages_session_created_at (session_id, created_at),
