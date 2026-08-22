@@ -33,22 +33,27 @@
 3. PostgreSQL + pgvector 向量库存储与相似度检索必须优先使用 Spring AI `VectorStore` / `PgVectorStore` 提供的 `add`、`similaritySearch` 等能力。
 4. 禁止在后端代码中手写 pgvector 插入、检索、建表或索引 SQL。
 5. 禁止 Spring AI `PgVectorStore` 自动建表；Spring AI 后端必须保持 `initializeSchema(false)`。
-6. pgvector 表必须由开发者手工执行 `sql/pgvector_rag_schema.sql` 创建。
+6. pgvector 表必须由部署阶段的独立 Flyway 容器执行 `sql/migrations/postgresql/` 中的版本迁移创建。
 
-## 5. 一次性 SQL 文件规则
+## 5. 版本迁移与 SQL 文件规则
 
-1. 建表、索引、初始化等一次性 SQL 必须写入仓库根目录 `sql/` 下的独立 `.sql` 文件。
-2. 禁止把一次性 SQL 写进 Java、Python、配置类、启动逻辑或 README 示例中替代正式 SQL 文件。
-3. 禁止在应用启动流程中执行项目自写的一次性 SQL。
-4. 表结构初始化由开发者手工执行。
+1. 手工建库脚本只允许放入 `sql/bootstrap/`，不进入 Flyway 迁移历史。
+2. MySQL 版本迁移固定放入 `sql/migrations/mysql/`，PostgreSQL 版本迁移固定放入 `sql/migrations/postgresql/`。
+3. 本地演示数据只允许放入 `sql/seeds/`，生产部署禁止执行。
+4. 迁移文件必须使用 `V<日期><序号>__<英文描述>.sql` 命名，并兼容全新数据库和当前已上线结构。
+5. 已经执行的迁移文件禁止修改、重命名或删除；后续调整只能新增更高版本迁移。
+6. 已有非空数据库统一以 `baselineVersion=0` 接入 Flyway，后续执行仓库内全部版本迁移。
+7. 应用启动流程禁止执行项目 SQL；Docker 启动脚本和 CI/CD 只能通过独立 Flyway 容器执行迁移。
+8. 生产迁移不得插入、覆盖或重置演示账号、测试数据和本地种子数据。
+9. CI/CD 必须先备份数据库再迁移；任一迁移失败时不得继续更新应用容器。
 
 ## 6. AI 面试会话存储规则
 
 1. AI 面试会话存储数据库固定为 MySQL。
 2. PostgreSQL 仅用于向量存储相关能力，不用于会话表存储。
-3. 会话建表脚本仅保留一份：`sql/interview_schema.sql`。
+3. 会话结构迁移只允许存放在 `sql/migrations/mysql/`，不得在其他目录保留可独立执行的重复建表脚本。
 4. MySQL 面试会话表和 pgvector RAG 向量表都禁止应用启动自动建表。
-5. 表结构必须由开发者手工执行 `sql/interview_schema.sql` 与 `sql/pgvector_rag_schema.sql`。
+5. 表结构由 Docker 启动脚本或 CI/CD 在应用启动前通过 Flyway 执行。
 
 ## 7. 数据库操作工具规则
 

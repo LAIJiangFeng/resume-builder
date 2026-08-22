@@ -1,5 +1,5 @@
 -- author: jf
--- 账号隔离的多简历数据库结构，仅允许手工执行一次。
+-- 创建账号隔离的多简历表。
 
 CREATE TABLE IF NOT EXISTS user_resumes (
     resume_id VARCHAR(64) NOT NULL COMMENT '简历 ID',

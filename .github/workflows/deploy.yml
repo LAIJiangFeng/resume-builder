@@ -75,7 +75,27 @@ jobs:
           git checkout "$DEPLOY_BRANCH"
           git pull --ff-only origin "$DEPLOY_BRANCH"
 
-          docker compose down
-          docker compose --profile "$DEPLOY_PROFILE" up --build -d
+          bash scripts/deploy-database-migrations.sh
+          docker compose --profile "$DEPLOY_PROFILE" up --build -d --remove-orphans
+
+          BACKEND_CONTAINER="resume-builder-spring-ai-backend"
+          BACKEND_HEALTH=""
+          for _ in $(seq 1 90); do
+            BACKEND_HEALTH="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$BACKEND_CONTAINER" 2>/dev/null || true)"
+            if [ "$BACKEND_HEALTH" = "healthy" ]; then
+              break
+            fi
+            if [ "$BACKEND_HEALTH" = "unhealthy" ] || [ "$BACKEND_HEALTH" = "exited" ] || [ "$BACKEND_HEALTH" = "dead" ]; then
+              echo "Spring AI 后端容器状态异常：$BACKEND_HEALTH" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          if [ "$BACKEND_HEALTH" != "healthy" ]; then
+            echo "等待 Spring AI 后端健康检查超时。" >&2
+            exit 1
+          fi
+
           docker compose --profile "$DEPLOY_PROFILE" ps
           EOSSH

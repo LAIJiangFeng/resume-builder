@@ -68,6 +68,7 @@ docs/requirements/*
 !docs/requirements/2026-06-09-mobile-editor-responsive-font.md
 !docs/requirements/2026-06-09-ai-interview-chat-responsive-font.md
 !docs/requirements/2026-06-09-mobile-template-modal-grid.md
+!docs/requirements/2026-08-22-versioned-database-migrations.md
 
 # Workflow
 .workflow/*
@@ -78,3 +79,7 @@ docs/requirements/*
 !.workflow/scripts/resolve-lifecycle-plugins.ps1
 !.workflow/specs/
 !.workflow/specs/**
+!.workflow/archive/
+.workflow/archive/*
+!.workflow/archive/2026-08-23-versioned-database-migrations/
+!.workflow/archive/2026-08-23-versioned-database-migrations/summary.md

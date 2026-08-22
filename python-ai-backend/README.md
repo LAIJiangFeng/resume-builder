@@ -19,29 +19,20 @@
 - MySQL
 - PostgreSQL + pgvector
 
-推荐直接复用 `spring-ai-backend/docker-compose.yml` 启动数据库容器。
-
-### 1. 启动数据库
+### 1. 启动数据库并迁移
 
 在仓库根目录执行：
 
 ```bash
-cd spring-ai-backend
-docker compose up -d
+docker compose --profile python-ai up -d mysql pgvector
+docker compose --profile migration build flyway-mysql
+docker compose --profile migration run --rm --no-deps flyway-mysql
+docker compose --profile migration run --rm --no-deps flyway-pgvector
 ```
 
-### 2. 导入建表脚本
+迁移文件位于 `sql/migrations/`，应用启动不会自动建表。需要本地演示账号时，再手工执行 `sql/seeds/mysql/local_demo_users.sql`。
 
-在 `spring-ai-backend/` 目录执行：
-
-```bash
-docker exec -i spring-ai-mysql mysql -uroot -proot < ../sql/mysql_database_schema.sql
-docker exec -i spring-ai-mysql mysql -uroot -proot resume-builder < ../sql/interview_schema.sql
-docker exec -i spring-ai-pgvector psql -v ON_ERROR_STOP=1 -U pgvector -d postgres < ../sql/create_pgvector_resume_builder_database.sql
-docker exec -i spring-ai-pgvector psql -U pgvector -d resume-builder < ../sql/pgvector_rag_schema.sql
-```
-
-### 3. 准备环境变量
+### 2. 准备环境变量
 
 复制 `python-ai-backend/.env.example` 为 `python-ai-backend/.env`，至少确认以下配置：
 
@@ -73,7 +64,7 @@ PGVECTOR_DATASOURCE_USERNAME=pgvector
 PGVECTOR_DATASOURCE_PASSWORD=pgvector
 ```
 
-### 4. 安装依赖
+### 3. 安装依赖
 
 在 `python-ai-backend/` 目录执行：
 
@@ -83,7 +74,7 @@ uv pip install --python .venv\Scripts\python.exe -r requirements.txt
 uv pip install --python .venv\Scripts\python.exe -r requirements-optional.txt
 ```
 
-### 5. 启动后端
+### 4. 启动后端
 
 在仓库根目录执行：
 

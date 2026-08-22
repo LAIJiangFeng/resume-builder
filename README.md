@@ -52,32 +52,22 @@ Skill 会自动生成模板组件、注册模板并创建预览图。详细规�
 | 数据库 | MySQL、PostgreSQL、pgvector |
 | AI | OpenAI-compatible Chat、Embedding、Vision OCR、Realtime |
 
-## 中间件与 SQL
+## 中间件与数据库迁移
 
 完整功能需要运行：
 
 - MySQL 8.x：存储账号、简历和 AI 面试会话。
 - PostgreSQL 17 + pgvector：存储 RAG 知识库向量。
 - Ollama：仅在 `EMBEDDING_PROVIDER=ollama` 时需要。
+- Flyway：由 Docker 临时容器执行，不需要单独安装。
 
-首次初始化 MySQL：
+数据库脚本按用途存放：
 
-1. [mysql_database_schema.sql](sql/mysql_database_schema.sql)：创建 `resume-builder` 数据库。
-2. [auth_user_schema.sql](sql/auth_user_schema.sql)：创建账号和邮箱验证码表。
-3. [user_resume_schema.sql](sql/user_resume_schema.sql)：创建用户简历表。
-4. [interview_schema.sql](sql/interview_schema.sql)：创建 AI 面试会话表。
+- `sql/bootstrap/`：手工建库。
+- `sql/migrations/`：Flyway 版本迁移。
+- `sql/seeds/`：仅供本地手工导入的演示数据。
 
-首次初始化 PostgreSQL + pgvector：
-
-1. [create_pgvector_resume_builder_database.sql](sql/create_pgvector_resume_builder_database.sql)：连接 PostgreSQL 管理库执行，创建 `resume-builder` 数据库；数据库已存在时跳过。
-2. [pgvector_rag_schema.sql](sql/pgvector_rag_schema.sql)：连接 `resume-builder` 数据库执行，创建扩展和 RAG 向量表。
-
-已有数据库按需执行升级脚本，新库不需要执行：
-
-- [interview_user_isolation_migration.sql](sql/interview_user_isolation_migration.sql)：为旧面试会话表补充用户隔离字段和索引。
-- [user_resume_sort_index_migration.sql](sql/user_resume_sort_index_migration.sql)：更新旧用户简历表的排序索引，仅执行一次。
-
-Docker 启动脚本会自动执行建库、面试会话和 pgvector 相关 SQL，但不会自动执行 `auth_user_schema.sql` 和 `user_resume_schema.sql`，首次使用登录和云端简历前需手工执行。如果脚本跳过了已在宿主机运行的数据库容器，对应数据库的 SQL 也需手工执行。
+Windows Docker 启动脚本和 CI/CD 会先执行全部待处理迁移，成功后才启动后端。生产迁移不会执行 `sql/seeds/`，详细规则见 [SQL 说明](sql/README.md)。
 
 ## 快速启动
 

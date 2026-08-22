@@ -4,11 +4,25 @@
 # - frontend-only：仅托管构建后的 Vue 前端。
 # - spring-ai：前端 + Spring AI 后端 + MySQL + pgvector；启动脚本可按外部连接配置跳过 pgvector。
 # - python-ai：前端 + Python AI Backend + MySQL + pgvector；启动脚本可按外部连接配置跳过 pgvector。
+# - migration：仅运行 MySQL 与 PostgreSQL 的 Flyway 版本迁移。
 # spring-ai 与 python-ai 是互斥套件，不能同时启动。
 x-profile-contract:
   frontend-only: "frontend static site only"
   spring-ai: "frontend + spring-ai-backend + mysql + optional pgvector"
   python-ai: "frontend + python-ai-backend + mysql + optional pgvector"
+  migration: "versioned MySQL and PostgreSQL database migrations"
+
+x-flyway-common: &flyway-common
+  profiles:
+    - migration
+  image: "${FLYWAY_RUNTIME_IMAGE:-resume-builder-flyway:13.3.0-mysql-26.7.0}"
+  build:
+    context: ./docker/flyway
+    args:
+      FLYWAY_BASE_IMAGE: "${FLYWAY_BASE_IMAGE:-redgate/flyway:13.3.0-alpine@sha256:4c051c4081eda3a84a24e6adf4150fbda408f012c5e5167be3b0e975dc4016fc}"
+  restart: "no"
+  networks:
+    - resume-builder-network
 
 x-common-ai-env: &common-ai-env
   APP_RAG_TOP_K: "${APP_RAG_TOP_K:-5}"
@@ -117,6 +131,44 @@ services:
       - pgvector_data:/var/lib/postgresql/data
     networks:
       - resume-builder-network
+
+  flyway-mysql:
+    <<: *flyway-common
+    environment:
+      FLYWAY_URL: "${FLYWAY_MYSQL_URL:-jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-resume-builder}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}"
+      FLYWAY_USER: "${FLYWAY_MYSQL_USER:-root}"
+      FLYWAY_PASSWORD: "${FLYWAY_MYSQL_PASSWORD:-${MYSQL_ROOT_PASSWORD:-root}}"
+      FLYWAY_LOCATIONS: "filesystem:/flyway/sql"
+      FLYWAY_BASELINE_ON_MIGRATE: "${FLYWAY_BASELINE_ON_MIGRATE:-true}"
+      FLYWAY_BASELINE_VERSION: "${FLYWAY_BASELINE_VERSION:-0}"
+      FLYWAY_CONNECT_RETRIES: "${FLYWAY_CONNECT_RETRIES:-60}"
+      FLYWAY_LOCK_RETRY_COUNT: "${FLYWAY_LOCK_RETRY_COUNT:-50}"
+      FLYWAY_CLEAN_DISABLED: "true"
+      FLYWAY_FAIL_ON_MISSING_LOCATIONS: "true"
+      FLYWAY_VALIDATE_MIGRATION_NAMING: "true"
+    volumes:
+      - ./sql/migrations/mysql:/flyway/sql:ro
+    command:
+      - migrate
+
+  flyway-pgvector:
+    <<: *flyway-common
+    environment:
+      FLYWAY_URL: "${FLYWAY_POSTGRES_URL:-jdbc:postgresql://pgvector:5432/${POSTGRES_DB:-resume-builder}}"
+      FLYWAY_USER: "${FLYWAY_POSTGRES_USER:-${POSTGRES_USER:-pgvector}}"
+      FLYWAY_PASSWORD: "${FLYWAY_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD:-pgvector}}"
+      FLYWAY_LOCATIONS: "filesystem:/flyway/sql"
+      FLYWAY_BASELINE_ON_MIGRATE: "${FLYWAY_BASELINE_ON_MIGRATE:-true}"
+      FLYWAY_BASELINE_VERSION: "${FLYWAY_BASELINE_VERSION:-0}"
+      FLYWAY_CONNECT_RETRIES: "${FLYWAY_CONNECT_RETRIES:-60}"
+      FLYWAY_LOCK_RETRY_COUNT: "${FLYWAY_LOCK_RETRY_COUNT:-50}"
+      FLYWAY_CLEAN_DISABLED: "true"
+      FLYWAY_FAIL_ON_MISSING_LOCATIONS: "true"
+      FLYWAY_VALIDATE_MIGRATION_NAMING: "true"
+    volumes:
+      - ./sql/migrations/postgresql:/flyway/sql:ro
+    command:
+      - migrate
 
   spring-ai-backend:
     profiles:

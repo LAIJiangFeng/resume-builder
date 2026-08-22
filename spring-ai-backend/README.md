@@ -43,34 +43,20 @@ APP_AUTH_EMAIL_CODE_SECRET=replace_with_a_separate_random_secret
 
 `MAIL_AUTHORIZATION_CODE` 必须填写 QQ 邮箱“设置 > 账号 > POP3/IMAP/SMTP/Exchange/CardDAV/CalDAV 服务”中生成的 SMTP 授权码，不能填写 QQ 登录密码。真实邮箱与授权码只写入本地 `spring-ai-backend/.env`，不要提交到仓库。
 
-### 2. 启动数据库
+### 2. 启动数据库并迁移
 
-在 `spring-ai-backend/` 目录执行：
-
-```bash
-docker compose up -d
-```
-
-### 3. 导入建表脚本
-
-在 `spring-ai-backend/` 目录执行：
+在仓库根目录执行：
 
 ```bash
-docker exec -i spring-ai-mysql mysql -uroot -proot < ../sql/mysql_database_schema.sql
-docker exec -i spring-ai-mysql mysql -uroot -proot resume-builder < ../sql/interview_schema.sql
-docker exec -i spring-ai-mysql mysql -uroot -proot resume-builder < ../sql/auth_user_schema.sql
-docker exec -i spring-ai-pgvector psql -v ON_ERROR_STOP=1 -U pgvector -d postgres < ../sql/create_pgvector_resume_builder_database.sql
-docker exec -i spring-ai-pgvector psql -U pgvector -d resume-builder < ../sql/pgvector_rag_schema.sql
+docker compose --profile spring-ai up -d mysql pgvector
+docker compose --profile migration build flyway-mysql
+docker compose --profile migration run --rm --no-deps flyway-mysql
+docker compose --profile migration run --rm --no-deps flyway-pgvector
 ```
 
-说明：
+迁移文件位于 `sql/migrations/`，应用启动不会自动建表。需要本地演示账号时，再手工执行 `sql/seeds/mysql/local_demo_users.sql`。
 
-- 使用仓库根目录的一键启动脚本时，Docker 数据库容器会自动执行这些 SQL。
-- 直接在本目录执行 `docker compose up -d` 时，仍需要开发者手工执行这些 SQL。
-- Spring 后端禁止自动建表，启动前必须手工执行 `../sql/pgvector_rag_schema.sql` 创建 `rag_document_chunks`。
-- 如果数据库里已有 `rag_vector_store_qwen3_embedding_0_6b` 或旧结构 `rag_document_chunks`，且可以丢弃现有 RAG 向量数据，可先手工执行 `../sql/spring_ai_rag_table_cleanup.sql`，再执行 `../sql/pgvector_rag_schema.sql`，最后重启 Spring 后端。
-
-### 4. 启动后端
+### 3. 启动后端
 
 在 `spring-ai-backend/` 目录执行：
 
@@ -80,7 +66,7 @@ mvn spring-boot:run
 
 默认地址：`http://localhost:8999`
 
-健康检查：`GET http://localhost:8999/actuator/health`
+健康检查：`GET http://localhost:8999/health`
 
 ## 配置说明
 
@@ -148,17 +134,14 @@ AI 能力基础路径：`/api/ai`
 - `POST /password-reset/email-code`：向已注册邮箱发送密码重置验证码
 - `POST /password-reset`：使用邮箱验证码设置新密码
 
-## 建表脚本
+## 数据库迁移
 
-- `sql/interview_schema.sql`
-- `sql/auth_user_schema.sql`
-- `sql/pgvector_rag_schema.sql`
-- `sql/spring_ai_rag_table_cleanup.sql`
+- `sql/migrations/mysql/`：账号、简历和面试表迁移。
+- `sql/migrations/postgresql/`：pgvector RAG 表迁移。
+- `sql/bootstrap/`：非 Docker 数据库的手工建库脚本。
+- `sql/seeds/`：仅供本地使用的演示数据。
 
-说明：
-
-- `interview_schema.sql` 需要开发者手工执行一次，Spring 后端不会自动创建 MySQL 会话表。
-- Spring 后端不会自动创建 `rag_document_chunks`；`spring_ai_rag_table_cleanup.sql` 用于手工删除误建的 `rag_vector_store_*` 表和旧结构 `rag_document_chunks`，删除后必须重新手工执行 `pgvector_rag_schema.sql`。
+已执行迁移禁止修改，只能新增更高版本；Spring 后端继续保持 `PgVectorStore.initializeSchema(false)`。
 
 ## 常见问题
 

@@ -8,7 +8,13 @@ Spring AI 后端套件与 Python AI 后端套件共享同一前端契约时，Do
 </spec-entry>
 
 <spec-entry id="learning-20260501-docker-sql-init" category="learning" source="maestro-execute">
-数据库初始化策略必须与仓库规则保持一致：MySQL 面试会话表和 pgvector RAG 表不由应用启动自动创建，Docker 一键部署也应保留手工执行 `sql/interview_schema.sql` 与 `sql/pgvector_rag_schema.sql` 的步骤。
+数据库初始化策略必须与仓库规则保持一致：MySQL 业务表和 pgvector RAG 表不由应用启动自动创建；Docker 与 CI/CD 应在应用启动前通过独立 Flyway 容器执行版本迁移，迁移失败时不得继续更新应用。
+</spec-entry>
+
+## 2026-08-23 版本化数据库迁移
+
+<spec-entry id="learning-20260823-versioned-database-migrations" category="database" source="versioned-database-migrations">
+已有数据库接入自动迁移时，应把建库、版本迁移和本地种子数据分目录隔离，以 `baselineVersion=0` 登记旧库并让兼容迁移继续前进。已执行迁移必须保持不可变，生产迁移不得包含演示账号；部署必须先备份、再迁移、最后更新应用，且禁止在迁移前执行会停止现有应用的全栈 `down`。
 </spec-entry>
 
 ## 2026-08-15 轻量 Harness 生命周期

@@ -1,7 +1,5 @@
 -- author: jf
--- 手工执行：用于创建 Spring AI 与 Python 后端共用的 rag_document_chunks 向量表。
--- 后端禁止自动建表；Spring AI 后端的 PgVectorStore.initializeSchema(false) 只负责读写已存在的表。
--- 本脚本只创建 rag_document_chunks，不创建模型专属 rag_vector_store_* 表。
+-- 创建 Spring AI 与 Python 后端共用的 RAG 向量表。
 
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
