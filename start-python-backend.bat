@@ -37,30 +37,29 @@ set "VENV_PY_ABS=%BACKEND_DIR%\.venv\Scripts\python.exe"
 set "RUN_PY=%VENV_PY%"
 
 echo [1/7] Preparing virtual environment...
-if exist ".venv\pyvenv.cfg" if exist "%VENV_PY%" (
+set "RECREATE_VENV=0"
+if not exist ".venv\pyvenv.cfg" set "RECREATE_VENV=1"
+if not exist "%VENV_PY%" set "RECREATE_VENV=1"
+if "%RECREATE_VENV%"=="0" (
   "%VENV_PY%" -V >nul 2>&1
   if errorlevel 1 (
     echo [WARN] Existing virtual environment is broken, recreating...
-    call :recreate_venv
-    if errorlevel 1 (
-      echo [ERROR] Failed to create/repair virtual environment via uv.
-      pause
-      exit /b 1
-    )
-  ) else (
-    echo [INFO] Reusing existing virtual environment.
+    set "RECREATE_VENV=1"
   )
-) else (
+)
+if "%RECREATE_VENV%"=="1" (
   call :recreate_venv
   if errorlevel 1 (
     echo [ERROR] Failed to create/repair virtual environment via uv.
     pause
     exit /b 1
   )
+) else (
+  echo [INFO] Reusing existing virtual environment.
 )
 
 echo [2/7] Checking core dependencies...
-"%VENV_PY%" -c "import fastapi,uvicorn,pydantic,pymysql,pypdf,docx" >nul 2>&1
+"%VENV_PY%" -c "import fastapi,uvicorn,pydantic,pymysql,pypdf,docx,cryptography,sqlalchemy" >nul 2>&1
 if errorlevel 1 (
   echo [ERROR] Core dependencies are missing in .venv, but auto-install is disabled.
   echo [HINT] Install dependencies manually, for example:

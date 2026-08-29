@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useResumeStore } from '@/stores/resume'
 import TemplatePickerDialog from '@/components/resume/TemplatePickerDialog.vue'
@@ -18,6 +18,26 @@ const exporting = ref(false)
 const exportProgress = ref(0)
 const exportProgressText = ref('')
 type ExportQualityMode = 'compressed' | 'hd'
+type PdfRenderMode = 'pro' | 'foreign-object' | 'calibrated'
+
+interface ExportElementPair {
+  sourceElement: Element
+  exportElement: Element
+}
+
+interface ResumeExportClone {
+  exportHost: HTMLElement
+  exportNode: HTMLElement
+  elementPairs: ExportElementPair[]
+}
+
+interface PageBreakElementMapping {
+  sourceTop: number
+  sourceBottom: number
+  exportTop: number
+  exportBottom: number
+}
+
 const exportMenuOpen = ref(false)
 const exportMenuRef = ref<HTMLElement | null>(null)
 const templatePickerOpen = ref(false)
@@ -25,6 +45,17 @@ const templatePickerOpen = ref(false)
 const A4_WIDTH = 794
 const A4_RATIO = 297 / 210
 const A4_HEIGHT = Math.round(A4_WIDTH * A4_RATIO)
+const PDF_RENDER_MODE_FALLBACKS: Record<PdfRenderMode, PdfRenderMode | null> = {
+  pro: 'foreign-object',
+  'foreign-object': 'calibrated',
+  calibrated: null,
+}
+const PDF_RENDER_MODE_LABELS: Record<PdfRenderMode, string> = {
+  pro: '增强解析器',
+  'foreign-object': '浏览器原生兼容',
+  calibrated: '校准兼容',
+}
+let pdfRenderMode: PdfRenderMode = 'pro'
 const pageBreaks = ref<number[]>([])
 const previewScale = ref(1)
 const paperVisualHeight = ref(A4_HEIGHT)
@@ -55,7 +86,188 @@ async function setExportProgress(percent: number, text: string) {
   await waitNextFrame()
 }
 
+function prepareResumeTemplatePdfAlignment(exportNode: HTMLElement) {
+  // 校准兼容模式不用原生 marker，改用真实绝对定位标记保证视觉对齐。
+  const sectionTitles = exportNode.querySelectorAll<HTMLElement>(
+    '.resume-template-default .section-title, .resume-template-blue-linear .section-title',
+  )
+  sectionTitles.forEach((title) => {
+    if (title.querySelector(':scope > .pdf-export-title-text')) return
 
+    const titleText = document.createElement('span')
+    titleText.className = 'pdf-export-title-text'
+    while (title.firstChild) {
+      titleText.appendChild(title.firstChild)
+    }
+    title.appendChild(titleText)
+  })
+
+  const metaIcons = exportNode.querySelectorAll<SVGSVGElement>('.meta-item > .meta-icon-svg')
+  metaIcons.forEach((icon) => {
+    if (icon.parentElement?.classList.contains('pdf-export-meta-icon-box')) return
+    const metaItem = icon.parentElement
+    if (!(metaItem instanceof HTMLElement)) return
+
+    const iconBox = document.createElement('span')
+    iconBox.className = 'pdf-export-meta-icon-box'
+    iconBox.setAttribute('aria-hidden', 'true')
+    metaItem.classList.add('pdf-export-meta-item')
+    metaItem.insertBefore(iconBox, icon)
+    iconBox.appendChild(icon)
+
+    Array.from(metaItem.childNodes).forEach((node) => {
+      if (node === iconBox) return
+      if (node instanceof HTMLElement) {
+        node.classList.add('pdf-export-meta-text')
+        return
+      }
+
+      if (node.nodeType !== Node.TEXT_NODE || !node.textContent?.trim()) return
+      const textBox = document.createElement('span')
+      textBox.className = 'pdf-export-meta-text'
+      textBox.textContent = node.textContent
+      metaItem.replaceChild(textBox, node)
+    })
+  })
+
+  const listItems = exportNode.querySelectorAll<HTMLElement>(
+    [
+      '.resume-template-default .entry-rich ul > li',
+      '.resume-template-default .entry-rich ol > li',
+      '.resume-template-blue-linear .entry-rich ul > li',
+      '.resume-template-blue-linear .entry-rich ol > li',
+    ].join(', '),
+  )
+  listItems.forEach((item) => {
+    if (item.querySelector(':scope > .pdf-export-inline-marker')) return
+
+    const parent = item.parentElement
+    if (!parent) return
+
+    const marker = document.createElement('span')
+    marker.className = 'pdf-export-inline-marker'
+    marker.setAttribute('aria-hidden', 'true')
+
+    if (parent.tagName === 'OL') {
+      marker.classList.add('pdf-export-inline-marker-number')
+      const siblings = Array.from(parent.children).filter((node): node is HTMLElement => node instanceof HTMLElement && node.tagName === 'LI')
+      const index = Math.max(0, siblings.indexOf(item))
+      const start = Number.parseInt(parent.getAttribute('start') || '1', 10)
+      const explicitValue = Number.parseInt(item.getAttribute('value') || '', 10)
+      const markerValue = Number.isFinite(explicitValue) ? explicitValue : (Number.isFinite(start) ? start : 1) + index
+      marker.textContent = `${markerValue}.`
+    } else {
+      marker.classList.add('pdf-export-inline-marker-bullet')
+    }
+
+    item.classList.add('pdf-export-list-item')
+    item.insertBefore(marker, item.firstChild)
+  })
+}
+
+function createResumeExportClone(sourceNode: HTMLElement, renderMode: PdfRenderMode): ResumeExportClone {
+  const sourceElements: Element[] = [sourceNode, ...sourceNode.querySelectorAll('*')]
+  const exportHost = document.createElement('div')
+  exportHost.style.position = 'fixed'
+  exportHost.style.left = '0'
+  exportHost.style.top = '0'
+  exportHost.style.width = `${A4_WIDTH}px`
+  exportHost.style.pointerEvents = 'none'
+  exportHost.style.opacity = '0'
+  exportHost.style.zIndex = '-1'
+
+  const exportNode = sourceNode.cloneNode(true) as HTMLElement
+  const exportElements: Element[] = [exportNode, ...exportNode.querySelectorAll('*')]
+  if (renderMode === 'calibrated') exportNode.classList.add('pdf-exporting')
+  exportNode.style.width = `${A4_WIDTH}px`
+  exportNode.style.minHeight = '0'
+  exportNode.style.height = 'auto'
+  exportNode.style.margin = '0'
+  if (renderMode === 'calibrated') exportNode.style.overflow = 'hidden'
+
+  exportHost.appendChild(exportNode)
+  document.body.appendChild(exportHost)
+  try {
+    if (renderMode === 'calibrated') prepareResumeTemplatePdfAlignment(exportNode)
+  } catch (error) {
+    exportHost.remove()
+    throw error
+  }
+
+  const pairCount = Math.min(sourceElements.length, exportElements.length)
+  const elementPairs: ExportElementPair[] = []
+  for (let index = 0; index < pairCount; index += 1) {
+    const sourceElement = sourceElements[index]
+    const exportElement = exportElements[index]
+    if (!sourceElement || !exportElement) continue
+    elementPairs.push({ sourceElement, exportElement })
+  }
+
+  return { exportHost, exportNode, elementPairs }
+}
+
+function collectPageBreakElementMappings(
+  sourceNode: HTMLElement,
+  exportNode: HTMLElement,
+  elementPairs: ExportElementPair[],
+): PageBreakElementMapping[] {
+  const sourceRootRect = sourceNode.getBoundingClientRect()
+  const exportRootRect = exportNode.getBoundingClientRect()
+  const sourceScale = sourceNode.offsetWidth > 0 ? sourceRootRect.width / sourceNode.offsetWidth : 1
+  const exportScale = exportNode.offsetWidth > 0 ? exportRootRect.width / exportNode.offsetWidth : 1
+  if (sourceScale <= 0 || exportScale <= 0) return []
+
+  const mappings: PageBreakElementMapping[] = []
+  elementPairs.forEach(({ sourceElement, exportElement }) => {
+    if (sourceElement === sourceNode || exportElement === exportNode) return
+    const sourceRect = sourceElement.getBoundingClientRect()
+    const exportRect = exportElement.getBoundingClientRect()
+    if (sourceRect.height <= 0 || exportRect.height <= 0) return
+
+    mappings.push({
+      sourceTop: (sourceRect.top - sourceRootRect.top) / sourceScale,
+      sourceBottom: (sourceRect.bottom - sourceRootRect.top) / sourceScale,
+      exportTop: (exportRect.top - exportRootRect.top) / exportScale,
+      exportBottom: (exportRect.bottom - exportRootRect.top) / exportScale,
+    })
+  })
+  return mappings
+}
+
+function mapExportBoundaryToPreview(boundary: number, mappings: PageBreakElementMapping[]): number {
+  const containingMappings = mappings
+    .filter((mapping) =>
+      mapping.exportTop <= boundary &&
+      mapping.exportBottom >= boundary &&
+      mapping.exportBottom - mapping.exportTop <= A4_HEIGHT,
+    )
+    .sort((left, right) =>
+      (left.exportBottom - left.exportTop) - (right.exportBottom - right.exportTop),
+    )
+  const containingMapping = containingMappings[0]
+  if (containingMapping) {
+    const exportHeight = containingMapping.exportBottom - containingMapping.exportTop
+    const sourceHeight = containingMapping.sourceBottom - containingMapping.sourceTop
+    const progress = exportHeight > 0 ? (boundary - containingMapping.exportTop) / exportHeight : 0
+    return containingMapping.sourceTop + Math.max(0, Math.min(1, progress)) * sourceHeight
+  }
+
+  let mappedBoundary = boundary
+  let nearestDistance = Number.POSITIVE_INFINITY
+  mappings.forEach((mapping) => {
+    const anchors: Array<[number, number]> = [
+      [mapping.exportTop, mapping.sourceTop],
+      [mapping.exportBottom, mapping.sourceBottom],
+    ]
+    anchors.forEach(([exportAnchor, sourceAnchor]) => {
+      const distance = Math.abs(boundary - exportAnchor)
+      if (distance >= nearestDistance) return
+      nearestDistance = distance
+      mappedBoundary = boundary + sourceAnchor - exportAnchor
+    })
+  })
+  return mappedBoundary
+}
 
 function findEffectiveCanvasHeight(canvas: HTMLCanvasElement): number {
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
@@ -97,33 +309,51 @@ function findEffectiveCanvasHeight(canvas: HTMLCanvasElement): number {
   return Math.min(canvas.height, roughY + 4)
 }
 
-function updatePageBreaks() {
-  if (!resumeRef.value) return
-  const contentHeight = resumeRef.value.scrollHeight
-  const pageHeight = A4_HEIGHT
-  paperVisualHeight.value = Math.max(A4_HEIGHT, contentHeight)
+function createUnmappedPageBreaks(contentHeight: number): number[] {
   const breaks: number[] = []
-  const totalPages = Math.max(1, Math.ceil((contentHeight - 1) / pageHeight))
-  const resumeRect = resumeRef.value.getBoundingClientRect()
-  const avoidElements = Array.from(
-    resumeRef.value.querySelectorAll<HTMLElement>('.section-title, .entry-head, .entry-rich li, .entry-rich p, .meta-line, .entry')
-  )
-
-  let currentBreak = pageHeight
-  for (let i = 1; i < totalPages; i += 1) {
-    let safeBreak = currentBreak
-    for (const el of avoidElements) {
-      const rect = el.getBoundingClientRect()
-      const top = rect.top - resumeRect.top
-      const bottom = rect.bottom - resumeRect.top
-      if (top < currentBreak && bottom > currentBreak && currentBreak - top < pageHeight * 0.35) {
-        safeBreak = Math.min(safeBreak, Math.floor(top) - 4)
-      }
-    }
-    breaks.push(safeBreak)
-    currentBreak = safeBreak + pageHeight
+  const totalPages = Math.max(1, Math.ceil((contentHeight - 1) / A4_HEIGHT))
+  for (let pageIndex = 1; pageIndex < totalPages; pageIndex += 1) {
+    breaks.push(pageIndex * A4_HEIGHT)
   }
-  pageBreaks.value = breaks
+  return breaks
+}
+
+function updatePageBreaks() {
+  const sourceNode = resumeRef.value
+  if (!sourceNode) return
+
+  const sourceContentHeight = sourceNode.scrollHeight
+  paperVisualHeight.value = Math.max(A4_HEIGHT, sourceContentHeight)
+  let exportClone: ResumeExportClone | null = null
+
+  try {
+    exportClone = createResumeExportClone(sourceNode, pdfRenderMode)
+    const exportContentHeight = Math.max(A4_HEIGHT, exportClone.exportNode.scrollHeight)
+    const totalPages = Math.max(1, Math.ceil((exportContentHeight - 1) / A4_HEIGHT))
+    const mappings = collectPageBreakElementMappings(
+      sourceNode,
+      exportClone.exportNode,
+      exportClone.elementPairs,
+    )
+    const breaks: number[] = []
+    for (let pageIndex = 1; pageIndex < totalPages; pageIndex += 1) {
+      const exportBoundary = pageIndex * A4_HEIGHT
+      const mappedBoundary = mappings.length
+        ? mapExportBoundaryToPreview(exportBoundary, mappings)
+        : exportBoundary
+      const previousBoundary = breaks[breaks.length - 1] ?? 0
+      const previewBoundary = Math.max(
+        Math.min(sourceContentHeight, previousBoundary + 1),
+        Math.min(sourceContentHeight, Math.round(mappedBoundary)),
+      )
+      breaks.push(previewBoundary)
+    }
+    pageBreaks.value = breaks
+  } catch {
+    pageBreaks.value = createUnmappedPageBreaks(sourceContentHeight)
+  } finally {
+    exportClone?.exportHost.remove()
+  }
 }
 
 function updatePreviewScale() {
@@ -151,6 +381,7 @@ function chooseTemplate(key: ResumeTemplateKey) {
 let resizeObserver: ResizeObserver | null = null
 let previewResizeObserver: ResizeObserver | null = null
 let previewScaleFrame: number | null = null
+let pageBreakFrame: number | null = null
 
 function schedulePreviewScaleUpdate() {
   if (previewScaleFrame !== null) return
@@ -160,13 +391,21 @@ function schedulePreviewScaleUpdate() {
   })
 }
 
+function schedulePageBreakUpdate() {
+  if (pageBreakFrame !== null) return
+  pageBreakFrame = requestAnimationFrame(() => {
+    pageBreakFrame = null
+    updatePageBreaks()
+  })
+}
+
 onMounted(() => {
   nextTick(() => {
     updatePreviewScale()
-    updatePageBreaks()
+    schedulePageBreakUpdate()
   })
   if (resumeRef.value) {
-    resizeObserver = new ResizeObserver(() => updatePageBreaks())
+    resizeObserver = new ResizeObserver(() => schedulePageBreakUpdate())
     resizeObserver.observe(resumeRef.value)
   }
   if (previewScrollRef.value) {
@@ -192,7 +431,7 @@ watch(
   () => {
     nextTick(() => {
       updatePreviewScale()
-      updatePageBreaks()
+      schedulePageBreakUpdate()
     })
   }
 )
@@ -201,6 +440,7 @@ onUnmounted(() => {
   resizeObserver?.disconnect()
   previewResizeObserver?.disconnect()
   if (previewScaleFrame !== null) cancelAnimationFrame(previewScaleFrame)
+  if (pageBreakFrame !== null) cancelAnimationFrame(pageBreakFrame)
   window.removeEventListener('resize', schedulePreviewScaleUpdate)
   document.removeEventListener('mousedown', handleDocumentPointerDown)
 })
@@ -246,6 +486,57 @@ function handleExportJson() {
   URL.revokeObjectURL(url)
 }
 
+function normalizeForeignObjectCanvasOrigin(
+  sourceCanvas: HTMLCanvasElement,
+  exportScale: number,
+  contentWidth: number,
+  contentHeight: number,
+  backgroundColor: string,
+): HTMLCanvasElement {
+  const normalizedCanvas = document.createElement('canvas')
+  normalizedCanvas.width = Math.max(1, Math.floor(contentWidth * exportScale))
+  normalizedCanvas.height = Math.max(1, Math.floor(contentHeight * exportScale))
+  const normalizedContext = normalizedCanvas.getContext('2d')
+  if (!normalizedContext) throw new Error('PDF 原点校准画布创建失败')
+
+  normalizedContext.fillStyle = backgroundColor || '#ffffff'
+  normalizedContext.fillRect(0, 0, normalizedCanvas.width, normalizedCanvas.height)
+  // html2canvas-pro 2.4.0 的 foreignObject 兼容渲染会把原点设为 scale，画布偏移量为 scale² 像素。
+  const sourceOriginOffset = exportScale * exportScale
+  normalizedContext.drawImage(
+    sourceCanvas,
+    sourceOriginOffset,
+    sourceOriginOffset,
+    normalizedCanvas.width,
+    normalizedCanvas.height,
+    0,
+    0,
+    normalizedCanvas.width,
+    normalizedCanvas.height,
+  )
+  sourceCanvas.width = 1
+  sourceCanvas.height = 1
+  return normalizedCanvas
+}
+
+function assertCanvasReadable(canvas: HTMLCanvasElement) {
+  const sampleCanvas = document.createElement('canvas')
+  sampleCanvas.width = 32
+  sampleCanvas.height = 32
+  const sampleContext = sampleCanvas.getContext('2d', { willReadFrequently: true })
+  if (!sampleContext) throw new Error('PDF 画布上下文创建失败')
+
+  sampleContext.drawImage(canvas, 0, 0, sampleCanvas.width, sampleCanvas.height)
+  const pixels = sampleContext.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data
+  let minimumChannel = 255
+  let maximumChannel = 0
+  for (let index = 0; index < pixels.length; index += 4) {
+    minimumChannel = Math.min(minimumChannel, pixels[index] ?? 255, pixels[index + 1] ?? 255, pixels[index + 2] ?? 255)
+    maximumChannel = Math.max(maximumChannel, pixels[index] ?? 0, pixels[index + 1] ?? 0, pixels[index + 2] ?? 0)
+  }
+  if (maximumChannel - minimumChannel < 2) throw new Error('浏览器原生 PDF 画布内容为空')
+}
+
 async function exportPDF(mode: ExportQualityMode) {
   if (!resumeRef.value) return
   exporting.value = true
@@ -254,46 +545,72 @@ async function exportPDF(mode: ExportQualityMode) {
   exportProgressText.value = '准备导出...'
   const isHdMode = mode === 'hd'
   const sourceNode = resumeRef.value
-  const exportHost = document.createElement('div')
-  exportHost.style.position = 'fixed'
-  exportHost.style.left = '-10000px'
-  exportHost.style.top = '0'
-  exportHost.style.width = `${A4_WIDTH}px`
-  exportHost.style.pointerEvents = 'none'
-  exportHost.style.opacity = '0'
-  exportHost.style.zIndex = '-1'
-
-  const exportNode = sourceNode.cloneNode(true) as HTMLElement
-  exportNode.classList.add('pdf-exporting')
-  exportNode.style.width = `${A4_WIDTH}px`
-  exportNode.style.minHeight = '0'
-  exportNode.style.height = 'auto'
-  exportNode.style.margin = '0'
-  exportNode.style.overflow = 'hidden'
-
-  exportHost.appendChild(exportNode)
-  document.body.appendChild(exportHost)
   const resumePaperBackground = window
     .getComputedStyle(document.documentElement)
     .getPropertyValue('--resume-paper-background')
     .trim()
+  let exportClone: ResumeExportClone | null = null
 
   try {
     await setExportProgress(8, '准备导出资源...')
     await document.fonts?.ready
     await setExportProgress(18, '加载导出引擎...')
-    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas-pro'), import('jspdf')])
+    const [{ default: html2canvasPro }, { jsPDF }] = await Promise.all([
+      import('html2canvas-pro'),
+      import('jspdf'),
+    ])
     await setExportProgress(36, '正在渲染简历画布...')
     const exportScale = isHdMode ? Math.min(4, Math.max(3, window.devicePixelRatio || 1)) : 2
-    const canvas = await html2canvas(exportNode, {
-      scale: exportScale,
-      useCORS: true,
-      width: A4_WIDTH,
-      windowWidth: A4_WIDTH,
-      backgroundColor: resumePaperBackground,
-      scrollX: 0,
-      scrollY: 0,
-    })
+    const renderCanvas = async (exportNode: HTMLElement, renderMode: PdfRenderMode) => {
+      const usesForeignObjectRenderer = renderMode === 'foreign-object'
+      const contentHeight = Math.ceil(exportNode.getBoundingClientRect().height)
+      // foreignObject 兼容渲染先扩展边界，确保校正原点时不会丢失右侧和底部内容。
+      const foreignObjectRenderPadding = usesForeignObjectRenderer ? exportScale + 1 : 0
+      const sourceCanvas = await html2canvasPro(exportNode, {
+        scale: exportScale,
+        useCORS: true,
+        foreignObjectRendering: usesForeignObjectRenderer,
+        width: A4_WIDTH + foreignObjectRenderPadding,
+        ...(usesForeignObjectRenderer ? { height: contentHeight + foreignObjectRenderPadding } : {}),
+        windowWidth: A4_WIDTH,
+        backgroundColor: resumePaperBackground,
+        scrollX: 0,
+        scrollY: 0,
+      })
+      return usesForeignObjectRenderer
+        ? normalizeForeignObjectCanvasOrigin(
+            sourceCanvas,
+            exportScale,
+            A4_WIDTH,
+            contentHeight,
+            resumePaperBackground,
+          )
+        : sourceCanvas
+    }
+
+    let activeRenderMode = pdfRenderMode
+    let canvas: HTMLCanvasElement | null = null
+    while (!canvas) {
+      exportClone = createResumeExportClone(sourceNode, activeRenderMode)
+      try {
+        const renderedCanvas = await renderCanvas(exportClone.exportNode, activeRenderMode)
+        assertCanvasReadable(renderedCanvas)
+        canvas = renderedCanvas
+      } catch (renderError) {
+        const fallbackRenderMode = PDF_RENDER_MODE_FALLBACKS[activeRenderMode]
+        if (!fallbackRenderMode) throw renderError
+
+        console.warn(
+          `PDF ${PDF_RENDER_MODE_LABELS[activeRenderMode]}渲染失败，已切换${PDF_RENDER_MODE_LABELS[fallbackRenderMode]}模式。`,
+          renderError,
+        )
+        exportClone.exportHost.remove()
+        exportClone = null
+        pdfRenderMode = fallbackRenderMode
+        activeRenderMode = fallbackRenderMode
+        schedulePageBreakUpdate()
+      }
+    }
     await setExportProgress(68, '正在分页生成 PDF...')
 
     const pdf = new jsPDF({
@@ -309,29 +626,9 @@ async function exportPDF(mode: ExportQualityMode) {
     let offsetY = 0
     let pageIndex = 0
 
-    const exportRect = exportNode.getBoundingClientRect()
-    const avoidElements = Array.from(
-      exportNode.querySelectorAll<HTMLElement>(
-        '.section-title, .entry-head, .entry-rich li, .entry-rich p, .meta-line, .entry'
-      )
-    )
-
     while (offsetY < effectiveHeight - 1) {
       const remainingHeight = effectiveHeight - offsetY
-      let sliceHeight = Math.min(pagePixelHeight, remainingHeight)
-      if (offsetY + sliceHeight < effectiveHeight - 1) {
-        const idealCutDomY = (offsetY + sliceHeight) / exportScale
-        let safeCutDomY = idealCutDomY
-        for (const el of avoidElements) {
-          const rect = el.getBoundingClientRect()
-          const top = rect.top - exportRect.top
-          const bottom = rect.bottom - exportRect.top
-          if (top < idealCutDomY && bottom > idealCutDomY && idealCutDomY - top < A4_HEIGHT * 0.35) {
-            safeCutDomY = Math.min(safeCutDomY, top - 4)
-          }
-        }
-        sliceHeight = Math.max(10, Math.round(safeCutDomY * exportScale) - offsetY)
-      }
+      const sliceHeight = Math.min(pagePixelHeight, remainingHeight)
       if (sliceHeight <= 2) break
 
       const pageCanvas = document.createElement('canvas')
@@ -364,7 +661,7 @@ async function exportPDF(mode: ExportQualityMode) {
   } catch (err) {
     console.error('PDF 导出失败:', err)
   } finally {
-    exportHost.remove()
+    exportClone?.exportHost.remove()
     exportProgress.value = 0
     exportProgressText.value = ''
     exporting.value = false
@@ -432,339 +729,4 @@ async function exportPDF(mode: ExportQualityMode) {
   </aside>
 </template>
 
-<style scoped>
-.preview-panel {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
-.preview-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.preview-title-row {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.template-trigger,
-.a4-badge,
-.btn-export {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.template-trigger {
-  height: 28px;
-  gap: 6px;
-  padding: 0 10px;
-  border: 1px solid var(--border-color);
-  background: var(--surface-soft);
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.template-trigger:hover {
-  border-color: var(--primary-500);
-  background: var(--primary-50);
-  color: var(--primary-500);
-}
-
-.template-trigger-label {
-  color: var(--primary-500);
-}
-
-.template-trigger-name {
-  max-width: 150px;
-  overflow: hidden;
-  color: var(--text-primary);
-  text-overflow: ellipsis;
-}
-
-.template-trigger-arrow {
-  color: var(--text-secondary);
-}
-
-.a4-badge {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border-color);
-  background: var(--surface-base);
-  color: var(--text-secondary);
-}
-
-.btn-export {
-  height: 32px;
-  padding: 0 13px;
-  border: 1px solid var(--primary-500);
-  background: var(--primary-500);
-  color: var(--text-inverse);
-  cursor: pointer;
-}
-
-.btn-export:hover:not(:disabled) {
-  background: var(--primary-600);
-}
-
-.btn-export:disabled {
-  opacity: 0.7;
-  cursor: wait;
-}
-
-.export-actions {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-}
-
-.export-dropdown {
-  position: relative;
-}
-
-.export-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 20;
-  min-width: 152px;
-  padding: 6px;
-  border: 1px solid var(--border-color);
-  border-radius: 14px;
-  background: var(--surface-base);
-  box-shadow: var(--shadow-xl);
-}
-
-.export-menu-item {
-  width: 100%;
-  min-height: 34px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--surface-base);
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 700;
-  text-align: left;
-  cursor: pointer;
-}
-
-.export-menu-item:hover {
-  background: var(--primary-50);
-  color: var(--primary-500);
-}
-
-.export-progress {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 14px;
-  background: var(--surface-soft);
-}
-
-.export-progress-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.export-progress-text,
-.export-progress-percent {
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.export-progress-text {
-  color: var(--text-secondary);
-}
-
-.export-progress-percent {
-  color: var(--text-primary);
-}
-
-.export-progress-track {
-  height: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--border-soft);
-}
-
-.export-progress-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--primary-500);
-  transition: width 0.18s ease;
-}
-
-.preview-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  padding: 0;
-  border: 0;
-  background: var(--resume-paper-background);
-}
-
-.paper-wrapper {
-  position: relative;
-  margin: 0 auto;
-  padding-bottom: 8px;
-}
-
-.paper-scale-stage {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform-origin: top left;
-}
-
-.paper {
-  box-sizing: border-box;
-  background: var(--resume-paper-background);
-  border: 0;
-  color: var(--resume-paper-ink);
-}
-
-.paper.pdf-exporting {
-  box-shadow: none;
-  border: none;
-  border-radius: 0;
-  min-height: 0 !important;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif !important;
-}
-
-.paper.pdf-exporting * {
-  font-family: inherit !important;
-}
-
-
-
-
-.page-line {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  height: 0;
-  pointer-events: none;
-  z-index: 2;
-}
-
-.page-line::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  border-top: 1px dashed var(--primary-500);
-}
-
-.page-line span {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translate(-50%, -50%);
-  color: var(--primary-500);
-  font-size: 10px;
-  font-weight: 600;
-  background: var(--bg-preview);
-  padding: 0 4px;
-}
-
-@media (max-width: 760px) {
-  .preview-panel {
-    width: 100%;
-    max-width: none;
-    flex: 1 1 auto;
-    height: 100%;
-    padding: 6px 0 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-    gap: 6px;
-  }
-
-  .preview-top {
-    align-items: stretch;
-    flex-direction: column;
-    padding: 0 8px;
-  }
-
-  .preview-title-row {
-    flex-wrap: wrap;
-  }
-
-  .template-trigger {
-    flex: 1 1 180px;
-    justify-content: space-between;
-    height: 34px;
-  }
-
-  .template-trigger-name {
-    max-width: 140px;
-  }
-
-  .a4-badge {
-    height: 26px;
-  }
-
-  .export-actions,
-  .btn-export {
-    width: 100%;
-  }
-
-  .btn-export {
-    height: 34px;
-  }
-
-  .export-menu {
-    left: 0;
-    right: 0;
-  }
-
-  .export-menu-item {
-    min-height: 34px;
-  }
-
-  .preview-scroll {
-    overflow-x: hidden;
-    overflow-y: auto;
-    scrollbar-width: none;
-    scrollbar-gutter: auto;
-    padding: 0 8px;
-  }
-
-  .preview-scroll::-webkit-scrollbar {
-    display: none;
-  }
-
-  .paper-wrapper {
-    padding-bottom: 0;
-  }
-
-}
-</style>
+<style scoped src="./PreviewPanel.css"></style>

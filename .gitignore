@@ -69,6 +69,7 @@ docs/requirements/*
 !docs/requirements/2026-06-09-ai-interview-chat-responsive-font.md
 !docs/requirements/2026-06-09-mobile-template-modal-grid.md
 !docs/requirements/2026-08-22-versioned-database-migrations.md
+!docs/requirements/2026-08-29-python-auth-feature-parity.md
 
 # Workflow
 .workflow/*
@@ -83,3 +84,5 @@ docs/requirements/*
 .workflow/archive/*
 !.workflow/archive/2026-08-23-versioned-database-migrations/
 !.workflow/archive/2026-08-23-versioned-database-migrations/summary.md
+!.workflow/archive/2026-08-29-python-auth-feature-parity/
+!.workflow/archive/2026-08-29-python-auth-feature-parity/summary.md

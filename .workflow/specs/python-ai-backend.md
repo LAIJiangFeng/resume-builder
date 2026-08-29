@@ -23,25 +23,30 @@
 
 它主要承接以下业务能力：
 
-1. 简历优化问答
+1. 账号与认证
+   - 与 Spring 后端共享邮箱验证码注册、密码重置、加密登录和访问令牌契约。
+   - 使用 MySQL 保存账号和验证码摘要，使用 SMTP 发送验证码。
+   - 认证失败、验证码限流和未知账号找回必须使用稳定且防枚举的响应语义。
+
+2. 简历优化问答
    - 提供普通问答和流式问答。
    - 支持对输出内容做结构清洗、简历内容净化和分段输出。
 
-2. AI 面试
+3. AI 面试
    - 支持面试轮次推进、会话历史管理、阶段控制、评分和总结。
    - 支持候选人模式与面试官模式。
    - 支持流式输出和会话详情查询。
 
-3. RAG 检索
+4. RAG 检索
    - 支持知识文档入库。
    - 支持基于向量召回的上下文检索和回答生成。
 
-4. 语音相关能力
+5. 语音相关能力
    - 支持音频转写。
    - 支持 Realtime 临时密钥下发。
 
-5. 与前端契约兼容
-   - 对外继续提供 `/api/ai/*` 风格接口。
+6. 与前端契约兼容
+   - 对外提供与 Spring 后端一致的 `/api/auth/*` 认证接口，并继续提供 `/api/ai/*` 风格接口。
    - 在前端不大改的前提下，逐步替换或并行现有后端实现。
 
 ---
@@ -141,6 +146,23 @@ realtime_routes.py
   -> openai_realtime_adapter.py
 ```
 
+### 5.6 Auth
+
+```text
+auth_routes.py
+  -> auth_service.py
+  -> auth_security_port.py / auth_mail_port.py / auth_user_repository.py
+  -> auth_security_adapter.py / smtp_auth_mail_adapter.py / auth_repository.py
+```
+
+认证强制约束：
+
+- 路由不得处理密码哈希、验证码校验、SMTP 或数据库事务。
+- 邮箱验证码只保存 HMAC-SHA256 摘要，明文只存在于单次发送调用栈。
+- 验证码检查必须在行锁事务中完成；错误次数达到上限后删除记录。
+- 密码重置后的旧访问令牌必须通过 `pwdv` 密码版本失效。
+- 未注册邮箱请求重置验证码时不得发送邮件，但响应状态和时间窗必须与成功请求一致。
+
 ---
 
 ## 6. 目标目录树
@@ -187,6 +209,8 @@ python-ai-backend/
    │  ├─ __init__.py
    │  ├─ config/
    │  ├─ persistence/
+   │  ├─ security/
+   │  ├─ mail/
    │  ├─ llm/
    │  ├─ agents/
    │  ├─ text/
@@ -578,6 +602,8 @@ python-ai-backend/
 
 - 配置读取
 - MySQL 持久化
+- 登录加密、访问令牌与密码哈希
+- SMTP 邮件发送
 - pgvector 检索
 - OpenAI / LangChain / Realtime 调用
 - AutoGen 适配
@@ -602,17 +628,18 @@ python-ai-backend/
 
 职责：
 
-- 承接面试会话存储。
-- 实现 `InterviewSessionRepository`。
+- 承接账号、邮箱验证码、简历和面试会话存储。
+- 实现认证仓储和 `InterviewSessionRepository`。
 
 边界：
 
-- 只负责会话业务数据落库。
-- 不负责向量检索。
+- 只负责 MySQL 业务数据落库和事务锁定。
+- 不负责验证码规则、密码策略、邮件发送或向量检索。
 
 重要约束：
 
-- 根据项目约束，AI 面试会话存储固定走 MySQL。
+- 根据项目约束，认证、简历和 AI 面试会话存储固定走 MySQL。
+- 认证仓储必须使用 ORM 表达查询和更新，不得把运行时 SQL 拼接到业务层。
 
 ### 14.4 `infrastructure/persistence/pgvector/`
 
@@ -672,6 +699,26 @@ python-ai-backend/
 边界：
 
 - 只负责装配和选择，不写业务规则。
+
+### 14.9 `infrastructure/security/`
+
+职责：
+
+- 实现登录密文解密、防重放、访问令牌签发校验和密码摘要。
+
+边界：
+
+- 只实现安全技术机制；账号是否允许注册、验证码是否可消费等业务规则属于 `application`。
+
+### 14.10 `infrastructure/mail/`
+
+职责：
+
+- 实现 SMTP 邮件投递。
+
+边界：
+
+- 只负责把指定验证码发送到指定邮箱；冷却、过期、错误次数和账号枚举规则属于 `application`。
 
 ---
 
@@ -759,6 +806,14 @@ python-ai-backend/
 - API 层：`api/routes/realtime_routes.py`
 - 用例层：`application/use_cases/create_realtime_client_secret.py`
 - 基础设施层：`infrastructure/llm/openai_realtime_adapter.py`
+
+### 16.6 Auth 能力
+
+- API 层：`api/routes/auth_routes.py`、`api/schemas/auth.py`、`api/deps/auth.py`
+- 应用层：`application/services/auth_service.py`、`application/dto/auth_dto.py`
+- 领域层：`domain/models/auth.py`、`domain/exceptions/auth_exceptions.py`
+- 端口层：`application/ports/auth_*_port.py`、`auth_user_repository.py`
+- 基础设施层：`infrastructure/security/auth_security_adapter.py`、`infrastructure/mail/smtp_auth_mail_adapter.py`、`infrastructure/persistence/mysql/auth_repository.py`
 
 ---
 

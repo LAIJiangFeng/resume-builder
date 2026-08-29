@@ -40,3 +40,9 @@ Harness 应强制需求、实现、验证、审查选择和归档结果，而不
 <spec-entry id="learning-20260815-prd-complexity-routing" category="workflow" source="harness-lifecycle">
 PRD 应由影响面和风险触发，而不是由“发生代码修改”触发。目标、范围和验收清晰的低风险局部修改可直接实现并针对性验证；新功能、跨层契约、数据结构、权限安全和高风险状态流程进入完整 Harness。无法可靠分类时只询问一次是否创建 PRD，用户选择不创建后不得重复追问；若直接修改过程中出现新的高风险范围，再暂停并重新路由。
 </spec-entry>
+
+## 2026-08-29 Python 双后端认证对齐
+
+<spec-entry id="learning-20260829-python-auth-parity" category="security" source="python-auth-feature-parity">
+双后端共用同一前端时，认证对齐不能只补路由名称：必须同时对齐请求模型、状态码语义、登录密文协议、令牌载荷、密码版本失效、验证码摘要、行锁事务、限流和未知账号防枚举响应。Python 侧认证编排应进入 `application`，密码学、SMTP 和 ORM 仓储分别由端口接入 `infrastructure`；Docker Compose 还必须把同一组认证与邮箱环境变量显式传给两套后端，避免本地可用而容器缺配置。
+</spec-entry>
