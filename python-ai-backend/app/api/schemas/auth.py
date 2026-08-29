@@ -20,10 +20,32 @@ class AuthLoginKeyResponse(BaseModel):
     publicKey: str
 
 
+class AuthEmailCodeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=1, max_length=254)
+
+
+class AuthEmailCodeResponse(BaseModel):
+    cooldownSeconds: int
+    expiresInSeconds: int
+
+
 class AuthRegisterRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=1, max_length=254)
+    verificationCode: str = Field(pattern=r"^\d{6}$")
     password: str = Field(min_length=8)
     displayName: str = Field(min_length=1, max_length=64)
+
+
+class AuthPasswordResetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=1, max_length=254)
+    verificationCode: str = Field(pattern=r"^\d{6}$")
+    newPassword: str = Field(min_length=8, max_length=128)
 
 
 class AuthUserResponse(BaseModel):

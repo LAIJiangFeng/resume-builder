@@ -69,6 +69,17 @@ class Settings:
     app_cors_allowed_origins: str
     auth_token_secret: str
     auth_token_ttl_seconds: int
+    auth_email_code_secret: str
+    auth_email_code_cooldown_seconds: int
+    auth_email_code_expiry_seconds: int
+    auth_email_code_max_failed_attempts: int
+    mail_host: str
+    mail_port: int
+    mail_username: str
+    mail_authorization_code: str
+    mail_connection_timeout_seconds: float
+    mail_timeout_seconds: float
+    mail_write_timeout_seconds: float
     app_rag_top_k: int
     app_interview_rag_top_k: int
     app_interview_rag_similarity_threshold: float
@@ -162,6 +173,23 @@ def get_settings() -> Settings:
         ),
         auth_token_secret=os.getenv("APP_AUTH_TOKEN_SECRET", "resume-builder-local-demo-auth-secret"),
         auth_token_ttl_seconds=max(300, _get_int("APP_AUTH_TOKEN_TTL_SECONDS", 43_200)),
+        auth_email_code_secret=os.getenv("APP_AUTH_EMAIL_CODE_SECRET", ""),
+        auth_email_code_cooldown_seconds=max(30, _get_int("APP_AUTH_EMAIL_CODE_COOLDOWN_SECONDS", 60)),
+        auth_email_code_expiry_seconds=max(30, _get_int("APP_AUTH_EMAIL_CODE_EXPIRY_SECONDS", 600)),
+        auth_email_code_max_failed_attempts=max(1, _get_int("APP_AUTH_EMAIL_CODE_MAX_FAILED_ATTEMPTS", 5)),
+        mail_host=os.getenv("MAIL_HOST", "smtp.qq.com"),
+        mail_port=max(1, _get_int("MAIL_PORT", 465)),
+        mail_username=os.getenv("MAIL_USERNAME", ""),
+        mail_authorization_code=os.getenv("MAIL_AUTHORIZATION_CODE", ""),
+        mail_connection_timeout_seconds=max(
+            1.0,
+            _get_float("MAIL_CONNECTION_TIMEOUT_MILLIS", 10_000.0) / 1_000.0,
+        ),
+        mail_timeout_seconds=max(1.0, _get_float("MAIL_TIMEOUT_MILLIS", 10_000.0) / 1_000.0),
+        mail_write_timeout_seconds=max(
+            1.0,
+            _get_float("MAIL_WRITE_TIMEOUT_MILLIS", 10_000.0) / 1_000.0,
+        ),
         app_rag_top_k=_get_int("APP_RAG_TOP_K", 5),
         app_interview_rag_top_k=max(1, _get_int("APP_INTERVIEW_RAG_TOP_K", _get_int("APP_RAG_TOP_K", 5))),
         app_interview_rag_similarity_threshold=_normalize_similarity_threshold(

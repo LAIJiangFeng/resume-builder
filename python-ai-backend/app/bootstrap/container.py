@@ -11,6 +11,7 @@ from app.application.ports.interview_session_repository import InterviewSessionR
 from app.application.ports.llm_port import ChatClientPort
 from app.application.ports.resume_repository import ResumeRepository
 from app.application.ports.vector_store_port import VectorStorePort
+from app.application.services.auth_service import AuthService
 from app.domain.services.document_chunking_service import DocumentChunkingService
 from app.domain.services.interview_flow_service import InterviewGraph
 from app.domain.services.logical_document_splitter_service import LogicalDocumentSplitterService
@@ -21,9 +22,12 @@ from app.infrastructure.factories.llm_factory import create_chat_client, create_
 from app.infrastructure.llm.openai_embedding_adapter import OpenAIEmbeddingAdapter
 from app.infrastructure.llm.ollama_embedding_adapter import OllamaEmbeddingAdapter
 from app.infrastructure.llm.openai_image_markdown_ocr_adapter import OpenAIImageMarkdownOcrAdapter
+from app.infrastructure.mail.smtp_auth_mail_adapter import SmtpAuthMailAdapter
+from app.infrastructure.persistence.mysql.auth_repository import MySqlAuthUserRepository
 from app.infrastructure.persistence.mysql.resume_repository import MySqlResumeRepository
-from app.infrastructure.persistence.mysql.session_repository import MySqlAuthUserRepository, MySqlInterviewSessionRepository
+from app.infrastructure.persistence.mysql.session_repository import MySqlInterviewSessionRepository
 from app.infrastructure.persistence.pgvector.vector_store_adapter import PgVectorStoreAdapter
+from app.infrastructure.security.auth_security_adapter import AuthSecurityAdapter
 from app.infrastructure.text.file_parser_adapter import FileParserAdapter
 
 _LOGGER = logging.getLogger("uvicorn.error")
@@ -176,6 +180,31 @@ def build_auth_user_repository(settings: Settings | None = None) -> AuthUserRepo
         datasource_url=resolved.mysql_datasource_url,
         username=resolved.mysql_datasource_username,
         password=resolved.mysql_datasource_password,
+    )
+
+
+def build_auth_service(settings: Settings | None = None) -> AuthService:
+    resolved = settings or get_settings()
+    security = AuthSecurityAdapter(
+        token_secret=resolved.auth_token_secret,
+        token_ttl_seconds=resolved.auth_token_ttl_seconds,
+    )
+    mail_sender = SmtpAuthMailAdapter(
+        host=resolved.mail_host,
+        port=resolved.mail_port,
+        username=resolved.mail_username,
+        authorization_code=resolved.mail_authorization_code,
+        connection_timeout_seconds=resolved.mail_connection_timeout_seconds,
+        io_timeout_seconds=max(resolved.mail_timeout_seconds, resolved.mail_write_timeout_seconds),
+    )
+    return AuthService(
+        repository=build_auth_user_repository(resolved),
+        security=security,
+        mail_sender=mail_sender,
+        email_code_secret=resolved.auth_email_code_secret,
+        email_code_cooldown_seconds=resolved.auth_email_code_cooldown_seconds,
+        email_code_expiry_seconds=resolved.auth_email_code_expiry_seconds,
+        email_code_max_failed_attempts=resolved.auth_email_code_max_failed_attempts,
     )
 
 

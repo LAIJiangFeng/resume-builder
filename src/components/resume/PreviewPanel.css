@@ -1,0 +1,444 @@
+/* author: jf */
+.preview-panel {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.preview-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.preview-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.template-trigger,
+.a4-badge,
+.btn-export {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.template-trigger {
+  height: 28px;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-soft);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.template-trigger:hover {
+  border-color: var(--primary-500);
+  background: var(--primary-50);
+  color: var(--primary-500);
+}
+
+.template-trigger-label {
+  color: var(--primary-500);
+}
+
+.template-trigger-name {
+  max-width: 150px;
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+}
+
+.template-trigger-arrow {
+  color: var(--text-secondary);
+}
+
+.a4-badge {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-base);
+  color: var(--text-secondary);
+}
+
+.btn-export {
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--primary-500);
+  background: var(--primary-500);
+  color: var(--text-inverse);
+  cursor: pointer;
+}
+
+.btn-export:hover:not(:disabled) {
+  background: var(--primary-600);
+}
+
+.btn-export:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.export-dropdown {
+  position: relative;
+}
+
+.export-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  min-width: 152px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--surface-base);
+  box-shadow: var(--shadow-xl);
+}
+
+.export-menu-item {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.export-menu-item:hover {
+  background: var(--primary-50);
+  color: var(--primary-500);
+}
+
+.export-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.export-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.export-progress-text,
+.export-progress-percent {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.export-progress-text {
+  color: var(--text-secondary);
+}
+
+.export-progress-percent {
+  color: var(--text-primary);
+}
+
+.export-progress-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border-soft);
+}
+
+.export-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary-500);
+  transition: width 0.18s ease;
+}
+
+.preview-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: 0;
+  border: 0;
+  background: var(--resume-paper-background);
+}
+
+.paper-wrapper {
+  position: relative;
+  margin: 0 auto;
+  padding-bottom: 8px;
+}
+
+.paper-scale-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: top left;
+}
+
+.paper {
+  box-sizing: border-box;
+  background: var(--resume-paper-background);
+  border: 0;
+  color: var(--resume-paper-ink);
+}
+
+.paper.pdf-exporting {
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+  min-height: 0 !important;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .section-title) {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1px;
+  line-height: 1;
+}
+
+/* 标题后间距减少 5px，并补到模块末尾，保持各模块起点和分页总高度不变。 */
+:global(.paper.pdf-exporting .resume-template-default .resume-section) {
+  margin-bottom: 13px;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .resume-section:last-of-type) {
+  margin-bottom: 0;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .pdf-export-title-text) {
+  display: inline-block;
+  line-height: 1;
+  transform: translateY(-10px);
+}
+
+/* 校准兼容模式补偿蓝色线性模板标题基线，并保持标题总占位不变。 */
+:global(.paper.pdf-exporting .resume-template-blue-linear .section-title) {
+  margin-bottom: 1px;
+  padding-bottom: 10px;
+}
+
+:global(.paper.pdf-exporting .resume-template-blue-linear .pdf-export-title-text) {
+  display: inline-block;
+  line-height: 1.2;
+  transform: translateY(-5px);
+}
+
+:global(.paper.pdf-exporting .pdf-export-meta-item) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 20px;
+  line-height: 20px;
+}
+
+:global(.paper.pdf-exporting .pdf-export-meta-text) {
+  display: inline-block;
+  line-height: 20px;
+}
+
+:global(.paper.pdf-exporting .pdf-export-meta-icon-box) {
+  box-sizing: border-box;
+  position: relative;
+  top: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+  width: 14px;
+  min-width: 14px;
+  height: 20px;
+  padding: 0;
+  line-height: 20px;
+  overflow: visible;
+}
+
+:global(.paper.pdf-exporting .pdf-export-meta-icon-box .meta-icon-svg) {
+  margin-top: 0;
+  transform: none;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .entry-rich ol),
+:global(.paper.pdf-exporting .resume-template-blue-linear .entry-rich ol) {
+  list-style: none;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .entry-rich ul li.pdf-export-list-item::before),
+:global(.paper.pdf-exporting .resume-template-blue-linear .entry-rich ul li.pdf-export-list-item::before) {
+  content: none;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .entry-rich .pdf-export-list-item),
+:global(.paper.pdf-exporting .resume-template-blue-linear .entry-rich .pdf-export-list-item) {
+  position: relative;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .pdf-export-inline-marker),
+:global(.paper.pdf-exporting .resume-template-blue-linear .pdf-export-inline-marker) {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  color: currentColor;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .pdf-export-inline-marker-number),
+:global(.paper.pdf-exporting .resume-template-blue-linear .pdf-export-inline-marker-number) {
+  top: 0;
+  left: -1.15em;
+  min-width: 1em;
+  height: 1.75em;
+  line-height: 1.75;
+  text-align: right;
+  transform: none;
+  font-size: 1em;
+  font-weight: inherit;
+}
+
+:global(.paper.pdf-exporting .resume-template-default .pdf-export-inline-marker-bullet),
+:global(.paper.pdf-exporting .resume-template-blue-linear .pdf-export-inline-marker-bullet) {
+  top: 1.45em;
+  left: 2px;
+  width: 5px;
+  height: 5px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.page-line {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  height: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.page-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  border-top: 1px dashed var(--primary-500);
+}
+
+.page-line span {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, -50%);
+  color: var(--primary-500);
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--bg-preview);
+  padding: 0 4px;
+}
+
+@media (max-width: 760px) {
+  .preview-panel {
+    width: 100%;
+    max-width: none;
+    flex: 1 1 auto;
+    height: 100%;
+    padding: 6px 0 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    gap: 6px;
+  }
+
+  .preview-top {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 0 8px;
+  }
+
+  .preview-title-row {
+    flex-wrap: wrap;
+  }
+
+  .template-trigger {
+    flex: 1 1 180px;
+    justify-content: space-between;
+    height: 34px;
+  }
+
+  .template-trigger-name {
+    max-width: 140px;
+  }
+
+  .a4-badge {
+    height: 26px;
+  }
+
+  .export-actions,
+  .btn-export {
+    width: 100%;
+  }
+
+  .btn-export {
+    height: 34px;
+  }
+
+  .export-menu {
+    left: 0;
+    right: 0;
+  }
+
+  .export-menu-item {
+    min-height: 34px;
+  }
+
+  .preview-scroll {
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
+    scrollbar-gutter: auto;
+    padding: 0 8px;
+  }
+
+  .preview-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .paper-wrapper {
+    padding-bottom: 0;
+  }
+
+}
